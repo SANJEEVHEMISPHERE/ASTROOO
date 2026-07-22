@@ -4,8 +4,9 @@ const astroService = require("../services/astro.service");
 
 const normalizeAstroData = async (req) => {
     const body = req.body || {};
-    let astrologerLoginId = body.astrologerLogin || body.astrologerLoginId || body.astrologerId || null;
+    let astrologerLoginId = body.astrologerLogin || body.astrologerLoginId || body.astrologerId || req.headers["astrologer-id"] || req.headers["astrologerloginid"] || null;
     let userId = body.user || body.userId || null;
+    let email = body.email || req.headers["email"] || null;
 
     // If request has JWT user from authMiddleware
     if (req.user) {
@@ -17,7 +18,6 @@ const normalizeAstroData = async (req) => {
     }
 
     let name = body.name || body.fullName || body.astrologerName || undefined;
-    let email = body.email || undefined;
 
     // Auto-fetch name and email from AstrologerLogin record if ID is provided
     if (astrologerLoginId && (!name || !email)) {
@@ -79,16 +79,23 @@ const createAstrologer = async (req, res, next) => {
 
         let astrologer = null;
 
-        // Upsert if profile already exists for astrologerLogin or email
-        if (payload.astrologerLogin || payload.email) {
-            const queryConditions = [];
-            if (payload.astrologerLogin) queryConditions.push({ astrologerLogin: payload.astrologerLogin });
-            if (payload.email) queryConditions.push({ email: payload.email });
+        // Try finding existing astrologer profile by astrologerLogin ID or email
+        const queryConditions = [];
+        if (payload.astrologerLogin) queryConditions.push({ astrologerLogin: payload.astrologerLogin });
+        if (payload.email) queryConditions.push({ email: payload.email });
 
+        if (queryConditions.length > 0) {
             const existing = await Astrologer.findOne({ $or: queryConditions });
-
             if (existing) {
                 astrologer = await astroService.updateAstrologer(existing._id, payload);
+            }
+        }
+
+        // Fallback: If no email or ID was passed, update the latest registered astrologer profile
+        if (!astrologer) {
+            const lastAstrologer = await Astrologer.findOne().sort({ createdAt: -1 });
+            if (lastAstrologer) {
+                astrologer = await astroService.updateAstrologer(lastAstrologer._id, payload);
             }
         }
 

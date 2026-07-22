@@ -5,10 +5,10 @@ const routes = require("./routes");
 
 const app = express();
 
-// Middlewares
+// Middlewares - Increased payload size limit to 50mb for image uploads
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Routes
 app.use("/api", routes);
@@ -30,15 +30,11 @@ app.use((err, req, res, next) => {
         message: err.message || "Internal Server Error"
     });
 });
+
 const astroRoutes = require("./routes/astro.route");
-
 app.use("/api/astro", astroRoutes);
+
 const astrologerLoginRoute = require("./routes/astrologerLogin.route");
-
-
-app.use(
-    "/api/astrologer",
-    astrologerLoginRoute
-);
+app.use("/api/astrologer", astrologerLoginRoute);
 
 module.exports = app;
