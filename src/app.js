@@ -33,5 +33,12 @@ app.use((err, req, res, next) => {
 const astroRoutes = require("./routes/astro.route");
 
 app.use("/api/astro", astroRoutes);
+const astrologerLoginRoute = require("./routes/astrologerLogin.route");
+
+
+app.use(
+    "/api/astrologer",
+    astrologerLoginRoute
+);
 
 module.exports = app;
