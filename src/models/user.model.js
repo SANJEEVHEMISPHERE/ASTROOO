@@ -65,7 +65,7 @@ const UserSchema = new mongoose.Schema(
       sparse: true,
     },
 
-    firebaseUid: {
+    tuloId: {
       type: String,
       required: true,
       unique: true,

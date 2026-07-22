@@ -1,28 +1,34 @@
-const admin = require("../config/firebase");
+const { verifyTuloToken } = require("../config/tulo");
 const User = require("../models/user.model");
 const { generateToken } = require("../utils/jwt");
 
-const login = async (idToken) => {
+const login = async (tuloToken) => {
 
-    // Verify Firebase Token
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    // Verify Tulo Token
+    const { tuloId, phone } = await verifyTuloToken(tuloToken);
 
-    const firebaseUid = decodedToken.uid;
-    const phone = decodedToken.phone_number;
-
-    // Find Existing User
-    let user = await User.findOne({ firebaseUid });
+    // Find Existing User by tuloId or phone
+    let user = await User.findOne({
+        $or: [
+            { tuloId },
+            ...(phone ? [{ phone }] : [])
+        ]
+    });
 
     // Create User if not found
     if (!user) {
 
         user = await User.create({
-            firebaseUid,
-            phone,
+            tuloId,
+            phone: phone || `+0000000000_${tuloId}`,
             role: "user",
             isProfileCompleted: false
         });
 
+    } else if (!user.tuloId) {
+        // Link tuloId if user previously existed by phone
+        user.tuloId = tuloId;
+        await user.save();
     }
 
     // Generate Backend JWT

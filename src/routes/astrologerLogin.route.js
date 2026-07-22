@@ -3,14 +3,11 @@ const express = require("express");
 const router = express.Router();
 
 const {
-    createAstrologerLogin
-}=require("../controllers/astrologerLogin.controller");
+    createAstrologerLogin,
+    loginAstrologer
+} = require("../controllers/astrologerLogin.controller");
 
-
-router.post(
-    "/register",
-    createAstrologerLogin
-);
-
+router.post("/register", createAstrologerLogin);
+router.post("/login", loginAstrologer);
 
 module.exports = router;
