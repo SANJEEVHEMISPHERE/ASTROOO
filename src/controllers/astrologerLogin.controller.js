@@ -1,4 +1,5 @@
 const AstrologerLogin = require("../models/astrologerLogin.model");
+const Astrologer = require("../models/astro.model");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../utils/jwt");
 
@@ -14,7 +15,7 @@ exports.createAstrologerLogin = async (req, res) => {
             });
         }
 
-        // Check existing email
+        // Check existing email in AstrologerLogin
         const existingAstrologer = await AstrologerLogin.findOne({ email });
 
         if (existingAstrologer) {
@@ -33,6 +34,22 @@ exports.createAstrologerLogin = async (req, res) => {
             password: hashedPassword
         });
 
+        // Automatically create initial Astrologer profile entry so it shows in GET /api/astro/all
+        let astroProfile = await Astrologer.findOne({ email });
+        if (!astroProfile) {
+            astroProfile = await Astrologer.create({
+                astrologerLogin: astrologerLogin._id,
+                name: astrologerLogin.name,
+                email: astrologerLogin.email,
+                isAvailable: true,
+                status: "pending"
+            });
+        } else {
+            astroProfile.astrologerLogin = astrologerLogin._id;
+            if (astrologerLogin.name) astroProfile.name = astrologerLogin.name;
+            await astroProfile.save();
+        }
+
         const token = generateToken({
             userId: astrologerLogin._id,
             role: "astrologer"
@@ -46,7 +63,8 @@ exports.createAstrologerLogin = async (req, res) => {
                 id: astrologerLogin._id,
                 name: astrologerLogin.name,
                 email: astrologerLogin.email
-            }
+            },
+            astrologerProfile: astroProfile
         });
 
     } catch (error) {
@@ -90,6 +108,24 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
+        // Ensure Astrologer profile entry exists
+        let astroProfile = await Astrologer.findOne({
+            $or: [
+                { astrologerLogin: astrologer._id },
+                { email: astrologer.email }
+            ]
+        });
+
+        if (!astroProfile) {
+            astroProfile = await Astrologer.create({
+                astrologerLogin: astrologer._id,
+                name: astrologer.name,
+                email: astrologer.email,
+                isAvailable: true,
+                status: "pending"
+            });
+        }
+
         // Generate JWT token
         const token = generateToken({
             userId: astrologer._id,
@@ -104,7 +140,8 @@ exports.loginAstrologer = async (req, res) => {
                 id: astrologer._id,
                 name: astrologer.name,
                 email: astrologer.email
-            }
+            },
+            astrologerProfile: astroProfile
         });
 
     } catch (error) {

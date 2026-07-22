@@ -1,4 +1,5 @@
 const AstrologerLogin = require("../models/astrologerLogin.model");
+const Astrologer = require("../models/astro.model");
 const astroService = require("../services/astro.service");
 
 const normalizeAstroData = async (req) => {
@@ -48,11 +49,29 @@ const normalizeAstroData = async (req) => {
 const createAstrologer = async (req, res, next) => {
     try {
         const payload = await normalizeAstroData(req);
-        const astrologer = await astroService.createAstrologer(payload);
+
+        let astrologer = null;
+
+        // Upsert if profile already exists for astrologerLogin or email
+        if (payload.astrologerLogin || payload.email) {
+            const queryConditions = [];
+            if (payload.astrologerLogin) queryConditions.push({ astrologerLogin: payload.astrologerLogin });
+            if (payload.email) queryConditions.push({ email: payload.email });
+
+            const existing = await Astrologer.findOne({ $or: queryConditions });
+
+            if (existing) {
+                astrologer = await astroService.updateAstrologer(existing._id, payload);
+            }
+        }
+
+        if (!astrologer) {
+            astrologer = await astroService.createAstrologer(payload);
+        }
 
         return res.status(201).json({
             success: true,
-            message: "Astrologer Created Successfully",
+            message: "Astrologer Profile Saved Successfully",
             data: astrologer
         });
 
