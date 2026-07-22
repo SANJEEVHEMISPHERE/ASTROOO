@@ -3,7 +3,7 @@ const Astrologer = require("../models/astro.model");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../utils/jwt");
 
-// Create Astrologer Login (Register)
+// 1. REGISTER ASTROLOGER (Saves ONLY in Astrologer collection, NOT in AstrologerLogin)
 exports.createAstrologerLogin = async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -15,8 +15,8 @@ exports.createAstrologerLogin = async (req, res) => {
             });
         }
 
-        // Check existing email in AstrologerLogin
-        const existingAstrologer = await AstrologerLogin.findOne({ email });
+        // Check if email already registered in Astrologer collection
+        const existingAstrologer = await Astrologer.findOne({ email: email.toLowerCase() });
 
         if (existingAstrologer) {
             return res.status(400).json({
@@ -28,30 +28,18 @@ exports.createAstrologerLogin = async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        const astrologerLogin = await AstrologerLogin.create({
+        // Save ONLY in Astrologer collection (Cluster)
+        const astrologer = await Astrologer.create({
             name: name || null,
-            email,
-            password: hashedPassword
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            isAvailable: true,
+            status: "pending"
         });
 
-        // Automatically create initial Astrologer profile entry so it shows in GET /api/astro/all
-        let astroProfile = await Astrologer.findOne({ email });
-        if (!astroProfile) {
-            astroProfile = await Astrologer.create({
-                astrologerLogin: astrologerLogin._id,
-                name: astrologerLogin.name,
-                email: astrologerLogin.email,
-                isAvailable: true,
-                status: "pending"
-            });
-        } else {
-            astroProfile.astrologerLogin = astrologerLogin._id;
-            if (astrologerLogin.name) astroProfile.name = astrologerLogin.name;
-            await astroProfile.save();
-        }
-
+        // Generate JWT token
         const token = generateToken({
-            userId: astrologerLogin._id,
+            userId: astrologer._id,
             role: "astrologer"
         });
 
@@ -59,16 +47,15 @@ exports.createAstrologerLogin = async (req, res) => {
             success: true,
             message: "Astrologer registered successfully",
             token,
-            astrologerLogin: {
-                id: astrologerLogin._id,
-                name: astrologerLogin.name,
-                email: astrologerLogin.email
-            },
-            astrologerProfile: astroProfile
+            astrologer: {
+                id: astrologer._id,
+                name: astrologer.name,
+                email: astrologer.email
+            }
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Register Error:", error);
         res.status(500).json({
             success: false,
             message: "Server Error"
@@ -76,7 +63,7 @@ exports.createAstrologerLogin = async (req, res) => {
     }
 };
 
-// Login Astrologer
+// 2. LOGIN ASTROLOGER (Only saves in AstrologerLogin collection upon SUCCESSFUL login)
 exports.loginAstrologer = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -88,17 +75,17 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
-        // Find astrologer by email
-        const astrologer = await AstrologerLogin.findOne({ email });
+        // Find registered astrologer in Astrologer collection by email
+        const astrologer = await Astrologer.findOne({ email: email.toLowerCase() });
 
-        if (!astrologer) {
+        if (!astrologer || !astrologer.password) {
             return res.status(401).json({
                 success: false,
                 message: "Invalid email or password"
             });
         }
 
-        // Compare password
+        // Compare bcrypt password
         const isPasswordValid = await bcrypt.compare(password, astrologer.password);
 
         if (!isPasswordValid) {
@@ -108,23 +95,18 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
-        // Ensure Astrologer profile entry exists
-        let astroProfile = await Astrologer.findOne({
-            $or: [
-                { astrologerLogin: astrologer._id },
-                { email: astrologer.email }
-            ]
+        // UPON SUCCESSFUL LOGIN: Save login record in AstrologerLogin collection
+        const loginRecord = await AstrologerLogin.create({
+            astrologer: astrologer._id,
+            name: astrologer.name,
+            email: astrologer.email,
+            password: astrologer.password,
+            lastLoginAt: new Date()
         });
 
-        if (!astroProfile) {
-            astroProfile = await Astrologer.create({
-                astrologerLogin: astrologer._id,
-                name: astrologer.name,
-                email: astrologer.email,
-                isAvailable: true,
-                status: "pending"
-            });
-        }
+        // Link AstrologerLogin reference in Astrologer document
+        astrologer.astrologerLogin = loginRecord._id;
+        await astrologer.save();
 
         // Generate JWT token
         const token = generateToken({
@@ -141,11 +123,11 @@ exports.loginAstrologer = async (req, res) => {
                 name: astrologer.name,
                 email: astrologer.email
             },
-            astrologerProfile: astroProfile
+            loginRecord
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Login Error:", error);
         res.status(500).json({
             success: false,
             message: "Server Error"

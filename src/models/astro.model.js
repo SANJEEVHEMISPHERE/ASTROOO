@@ -26,7 +26,14 @@ const AstroSchema = new mongoose.Schema(
             type: String,
             default: null,
             trim: true,
-            lowercase: true
+            lowercase: true,
+            unique: true,
+            sparse: true
+        },
+
+        password: {
+            type: String,
+            default: null
         },
 
         profileImage: {
