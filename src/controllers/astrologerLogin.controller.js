@@ -5,7 +5,7 @@ const { generateToken } = require("../utils/jwt");
 // Create Astrologer Login (Register)
 exports.createAstrologerLogin = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { name, email, password } = req.body;
 
         if (!email || !password) {
             return res.status(400).json({
@@ -14,7 +14,7 @@ exports.createAstrologerLogin = async (req, res) => {
             });
         }
 
-        // check existing email
+        // Check existing email
         const existingAstrologer = await AstrologerLogin.findOne({ email });
 
         if (existingAstrologer) {
@@ -24,10 +24,11 @@ exports.createAstrologerLogin = async (req, res) => {
             });
         }
 
-        // hash password
+        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const astrologerLogin = await AstrologerLogin.create({
+            name: name || null,
             email,
             password: hashedPassword
         });
@@ -43,6 +44,7 @@ exports.createAstrologerLogin = async (req, res) => {
             token,
             astrologerLogin: {
                 id: astrologerLogin._id,
+                name: astrologerLogin.name,
                 email: astrologerLogin.email
             }
         });
@@ -100,6 +102,7 @@ exports.loginAstrologer = async (req, res) => {
             token,
             astrologer: {
                 id: astrologer._id,
+                name: astrologer.name,
                 email: astrologer.email
             }
         });

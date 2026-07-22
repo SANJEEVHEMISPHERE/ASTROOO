@@ -1,8 +1,40 @@
+const AstrologerLogin = require("../models/astrologerLogin.model");
 const astroService = require("../services/astro.service");
 
-const normalizeAstroData = (body) => {
+const normalizeAstroData = async (req) => {
+    const body = req.body;
+    let astrologerLoginId = body.astrologerLogin || body.astrologerLoginId || body.astrologerId || null;
+    let userId = body.user || body.userId || null;
+
+    // If request has JWT user from authMiddleware
+    if (req.user) {
+        if (req.user.role === "astrologer") {
+            astrologerLoginId = astrologerLoginId || req.user.userId;
+        } else {
+            userId = userId || req.user.userId;
+        }
+    }
+
+    let name = body.name || body.fullName || body.astrologerName || null;
+    let email = body.email || null;
+
+    // Auto-fetch name and email from AstrologerLogin record if ID is provided
+    if (astrologerLoginId) {
+        try {
+            const loginInfo = await AstrologerLogin.findById(astrologerLoginId);
+            if (loginInfo) {
+                name = name || loginInfo.name;
+                email = email || loginInfo.email;
+            }
+        } catch (err) {}
+    }
+
     return {
         ...body,
+        name,
+        email,
+        astrologerLogin: astrologerLoginId,
+        user: userId,
         profileImage: body.profilePhoto || body.profileImage || null,
         introduction: body.introduction || body.about || null,
         about: body.introduction || body.about || null,
@@ -15,7 +47,7 @@ const normalizeAstroData = (body) => {
 
 const createAstrologer = async (req, res, next) => {
     try {
-        const payload = normalizeAstroData(req.body);
+        const payload = await normalizeAstroData(req);
         const astrologer = await astroService.createAstrologer(payload);
 
         return res.status(201).json({
@@ -31,7 +63,6 @@ const createAstrologer = async (req, res, next) => {
 
 const getAllAstrologers = async (req, res, next) => {
     try {
-
         const astrologers = await astroService.getAllAstrologers();
 
         return res.status(200).json({
@@ -47,7 +78,6 @@ const getAllAstrologers = async (req, res, next) => {
 
 const getAstrologerById = async (req, res, next) => {
     try {
-
         const astrologer = await astroService.getAstrologerById(req.params.id);
 
         return res.status(200).json({
@@ -62,10 +92,10 @@ const getAstrologerById = async (req, res, next) => {
 
 const updateAstrologer = async (req, res, next) => {
     try {
-
+        const payload = await normalizeAstroData(req);
         const astrologer = await astroService.updateAstrologer(
             req.params.id,
-            req.body
+            payload
         );
 
         return res.status(200).json({
@@ -81,7 +111,6 @@ const updateAstrologer = async (req, res, next) => {
 
 const deleteAstrologer = async (req, res, next) => {
     try {
-
         await astroService.deleteAstrologer(req.params.id);
 
         return res.status(200).json({
