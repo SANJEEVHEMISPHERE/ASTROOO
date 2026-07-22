@@ -3,7 +3,7 @@ const Astrologer = require("../models/astro.model");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../utils/jwt");
 
-// 1. REGISTER ASTROLOGER (Saves ALL signup & profile details directly into Astrologer collection)
+// 1. REGISTER ASTROLOGER
 exports.createAstrologerLogin = async (req, res) => {
     try {
         const body = req.body || {};
@@ -16,7 +16,7 @@ exports.createAstrologerLogin = async (req, res) => {
             });
         }
 
-        // Check if email already registered in Astrologer collection
+        // Check if email already registered
         const existingAstrologer = await Astrologer.findOne({ email: email.toLowerCase() });
 
         if (existingAstrologer) {
@@ -29,7 +29,7 @@ exports.createAstrologerLogin = async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Extract all optional profile fields sent during signup
+        // Extract optional profile fields if provided during signup
         const profileImage = body.profilePhoto || body.profileImage || null;
         const introduction = body.introduction || body.about || null;
         const about = body.introduction || body.about || null;
@@ -44,7 +44,7 @@ exports.createAstrologerLogin = async (req, res) => {
         const certificateName = body.certificateName || null;
         const achievements = body.achievements || null;
 
-        // Save ALL astrologer details directly in Astrologer collection
+        // Save Astrologer record
         const astrologer = await Astrologer.create({
             name: name || body.fullName || body.astrologerName || null,
             email: email.toLowerCase(),
@@ -72,7 +72,7 @@ exports.createAstrologerLogin = async (req, res) => {
             role: "astrologer"
         });
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: "Astrologer registered successfully",
             token,
@@ -88,7 +88,7 @@ exports.createAstrologerLogin = async (req, res) => {
     }
 };
 
-// 2. LOGIN ASTROLOGER (Only saves in AstrologerLogin collection upon SUCCESSFUL login)
+// 2. LOGIN ASTROLOGER (Only email & password required)
 exports.loginAstrologer = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -100,7 +100,7 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
-        // Find registered astrologer in Astrologer collection by email
+        // Find registered astrologer by email
         const astrologer = await Astrologer.findOne({ email: email.toLowerCase() });
 
         if (!astrologer || !astrologer.password) {
@@ -110,7 +110,7 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
-        // Compare bcrypt password
+        // Verify bcrypt password
         const isPasswordValid = await bcrypt.compare(password, astrologer.password);
 
         if (!isPasswordValid) {
@@ -120,18 +120,19 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
-        // UPON SUCCESSFUL LOGIN: Save login record in AstrologerLogin collection
-        const loginRecord = await AstrologerLogin.create({
-            astrologer: astrologer._id,
-            name: astrologer.name,
-            email: astrologer.email,
-            password: astrologer.password,
-            lastLoginAt: new Date()
-        });
+        // Save login timestamp & audit record in AstrologerLogin
+        try {
+            const loginRecord = await AstrologerLogin.create({
+                astrologer: astrologer._id,
+                name: astrologer.name,
+                email: astrologer.email,
+                password: astrologer.password,
+                lastLoginAt: new Date()
+            });
 
-        // Link AstrologerLogin reference in Astrologer document
-        astrologer.astrologerLogin = loginRecord._id;
-        await astrologer.save();
+            astrologer.astrologerLogin = loginRecord._id;
+            await astrologer.save();
+        } catch (e) {}
 
         // Generate JWT token
         const token = generateToken({
@@ -139,12 +140,11 @@ exports.loginAstrologer = async (req, res) => {
             role: "astrologer"
         });
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             message: "Login successful",
             token,
-            astrologer,
-            loginRecord
+            astrologer
         });
 
     } catch (error) {
