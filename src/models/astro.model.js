@@ -5,32 +5,39 @@ const AstroSchema = new mongoose.Schema(
         user: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: true,
-            unique: true
+            required: false,
+            default: null
         },
 
-        specialization: {
-            type: [String],
-            required: true,
-            default: []
+        astrologerLogin: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "AstrologerLogin",
+            required: false,
+            default: null
         },
 
-        experience: {
-            type: Number,
-            required: true,
-            min: 0
+        name: {
+            type: String,
+            default: null,
+            trim: true
         },
 
-        languages: {
-            type: [String],
-            required: true,
-            default: []
+        email: {
+            type: String,
+            default: null,
+            trim: true,
+            lowercase: true
         },
 
-        consultationFee: {
-            type: Number,
-            required: true,
-            min: 0
+        profileImage: {
+            type: String,
+            default: null
+        },
+
+        introduction: {
+            type: String,
+            trim: true,
+            default: null
         },
 
         about: {
@@ -39,9 +46,64 @@ const AstroSchema = new mongoose.Schema(
             default: null
         },
 
-        profileImage: {
+        experience: {
+            type: String,
+            default: "0"
+        },
+
+        strengths: {
+            type: [String],
+            default: []
+        },
+
+        approach: {
+            type: String,
+            trim: true,
+            default: null
+        },
+
+        motivation: {
+            type: String,
+            trim: true,
+            default: null
+        },
+
+        languages: {
+            type: [String],
+            default: []
+        },
+
+        specialization: {
+            type: [String],
+            default: []
+        },
+
+        toolsTechniques: {
+            type: String,
+            trim: true,
+            default: null
+        },
+
+        certificateFile: {
             type: String,
             default: null
+        },
+
+        certificateName: {
+            type: String,
+            default: null
+        },
+
+        achievements: {
+            type: String,
+            trim: true,
+            default: null
+        },
+
+        consultationFee: {
+            type: Number,
+            default: 0,
+            min: 0
         },
 
         consultationMode: {

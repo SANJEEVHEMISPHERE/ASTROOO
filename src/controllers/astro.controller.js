@@ -1,9 +1,22 @@
 const astroService = require("../services/astro.service");
 
+const normalizeAstroData = (body) => {
+    return {
+        ...body,
+        profileImage: body.profilePhoto || body.profileImage || null,
+        introduction: body.introduction || body.about || null,
+        about: body.introduction || body.about || null,
+        strengths: body.selectedStrengths || body.strengths || [],
+        specialization: body.selectedSpecializations || body.specialization || [],
+        certificateName: body.certificateName || null,
+        certificateFile: body.certificateFile || null
+    };
+};
+
 const createAstrologer = async (req, res, next) => {
     try {
-
-        const astrologer = await astroService.createAstrologer(req.body);
+        const payload = normalizeAstroData(req.body);
+        const astrologer = await astroService.createAstrologer(payload);
 
         return res.status(201).json({
             success: true,
