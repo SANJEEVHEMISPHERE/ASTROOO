@@ -3,7 +3,7 @@ const Astrologer = require("../models/astro.model");
 const astroService = require("../services/astro.service");
 
 const normalizeAstroData = async (req) => {
-    const body = req.body;
+    const body = req.body || {};
     let astrologerLoginId = body.astrologerLogin || body.astrologerLoginId || body.astrologerId || null;
     let userId = body.user || body.userId || null;
 
@@ -16,11 +16,11 @@ const normalizeAstroData = async (req) => {
         }
     }
 
-    let name = body.name || body.fullName || body.astrologerName || null;
-    let email = body.email || null;
+    let name = body.name || body.fullName || body.astrologerName || undefined;
+    let email = body.email || undefined;
 
     // Auto-fetch name and email from AstrologerLogin record if ID is provided
-    if (astrologerLoginId) {
+    if (astrologerLoginId && (!name || !email)) {
         try {
             const loginInfo = await AstrologerLogin.findById(astrologerLoginId);
             if (loginInfo) {
@@ -30,20 +30,47 @@ const normalizeAstroData = async (req) => {
         } catch (err) {}
     }
 
-    return {
-        ...body,
-        name,
-        email,
-        astrologerLogin: astrologerLoginId,
-        user: userId,
-        profileImage: body.profilePhoto || body.profileImage || null,
-        introduction: body.introduction || body.about || null,
-        about: body.introduction || body.about || null,
-        strengths: body.selectedStrengths || body.strengths || [],
-        specialization: body.selectedSpecializations || body.specialization || [],
-        certificateName: body.certificateName || null,
-        certificateFile: body.certificateFile || null
-    };
+    const payload = {};
+
+    if (astrologerLoginId) payload.astrologerLogin = astrologerLoginId;
+    if (userId) payload.user = userId;
+    if (name) payload.name = name;
+    if (email) payload.email = email;
+
+    const profileImage = body.profilePhoto || body.profileImage;
+    if (profileImage) payload.profileImage = profileImage;
+
+    const introduction = body.introduction || body.about;
+    if (introduction) {
+        payload.introduction = introduction;
+        payload.about = introduction;
+    }
+
+    if (body.experience !== undefined && body.experience !== null) payload.experience = String(body.experience);
+    if (body.approach !== undefined && body.approach !== null) payload.approach = body.approach;
+    if (body.motivation !== undefined && body.motivation !== null) payload.motivation = body.motivation;
+    if (body.toolsTechniques !== undefined && body.toolsTechniques !== null) payload.toolsTechniques = body.toolsTechniques;
+    if (body.achievements !== undefined && body.achievements !== null) payload.achievements = body.achievements;
+    if (body.certificateName !== undefined && body.certificateName !== null) payload.certificateName = body.certificateName;
+    if (body.certificateFile !== undefined && body.certificateFile !== null) payload.certificateFile = body.certificateFile;
+    if (body.consultationFee !== undefined && body.consultationFee !== null) payload.consultationFee = body.consultationFee;
+
+    const strengths = body.selectedStrengths || body.strengths;
+    if (strengths && Array.isArray(strengths) && strengths.length > 0) {
+        payload.strengths = strengths;
+    }
+
+    const specialization = body.selectedSpecializations || body.specialization;
+    if (specialization && Array.isArray(specialization) && specialization.length > 0) {
+        payload.specialization = specialization;
+    }
+
+    const languages = body.languages;
+    if (languages && Array.isArray(languages) && languages.length > 0) {
+        payload.languages = languages;
+    }
+
+    return payload;
 };
 
 const createAstrologer = async (req, res, next) => {
