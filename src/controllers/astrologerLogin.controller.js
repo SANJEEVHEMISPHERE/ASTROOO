@@ -3,10 +3,11 @@ const Astrologer = require("../models/astro.model");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../utils/jwt");
 
-// 1. REGISTER ASTROLOGER (Saves ONLY in Astrologer collection, NOT in AstrologerLogin)
+// 1. REGISTER ASTROLOGER (Saves ALL signup & profile details directly into Astrologer collection)
 exports.createAstrologerLogin = async (req, res) => {
     try {
-        const { name, email, password } = req.body;
+        const body = req.body || {};
+        const { name, email, password } = body;
 
         if (!email || !password) {
             return res.status(400).json({
@@ -28,11 +29,39 @@ exports.createAstrologerLogin = async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Save ONLY in Astrologer collection (Cluster)
+        // Extract all optional profile fields sent during signup
+        const profileImage = body.profilePhoto || body.profileImage || null;
+        const introduction = body.introduction || body.about || null;
+        const about = body.introduction || body.about || null;
+        const experience = body.experience ? String(body.experience) : "0";
+        const strengths = body.selectedStrengths || body.strengths || [];
+        const specialization = body.selectedSpecializations || body.specialization || [];
+        const languages = body.languages || [];
+        const approach = body.approach || null;
+        const motivation = body.motivation || null;
+        const toolsTechniques = body.toolsTechniques || null;
+        const certificateFile = body.certificateFile || null;
+        const certificateName = body.certificateName || null;
+        const achievements = body.achievements || null;
+
+        // Save ALL astrologer details directly in Astrologer collection
         const astrologer = await Astrologer.create({
-            name: name || null,
+            name: name || body.fullName || body.astrologerName || null,
             email: email.toLowerCase(),
             password: hashedPassword,
+            profileImage,
+            introduction,
+            about,
+            experience,
+            strengths,
+            specialization,
+            languages,
+            approach,
+            motivation,
+            toolsTechniques,
+            certificateFile,
+            certificateName,
+            achievements,
             isAvailable: true,
             status: "pending"
         });
@@ -47,11 +76,7 @@ exports.createAstrologerLogin = async (req, res) => {
             success: true,
             message: "Astrologer registered successfully",
             token,
-            astrologer: {
-                id: astrologer._id,
-                name: astrologer.name,
-                email: astrologer.email
-            }
+            astrologer
         });
 
     } catch (error) {
@@ -118,11 +143,7 @@ exports.loginAstrologer = async (req, res) => {
             success: true,
             message: "Login successful",
             token,
-            astrologer: {
-                id: astrologer._id,
-                name: astrologer.name,
-                email: astrologer.email
-            },
+            astrologer,
             loginRecord
         });
 
