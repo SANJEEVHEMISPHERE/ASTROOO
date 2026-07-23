@@ -1,4 +1,10 @@
 const nodemailer = require("nodemailer");
+const dns = require("dns");
+
+// Prefer IPv4 resolution to prevent ENETUNREACH IPv6 errors on Render
+try {
+    dns.setDefaultResultOrder("ipv4first");
+} catch (e) {}
 
 const isEmailConfigured = () => {
     const user = process.env.SMTP_USER;
@@ -13,9 +19,10 @@ const getTransporter = () => {
         host: process.env.SMTP_HOST || "smtp.gmail.com",
         port: parseInt(process.env.SMTP_PORT || "587"),
         secure: process.env.SMTP_PORT === "465",
-        connectionTimeout: 5000, // 5s connection timeout
-        greetingTimeout: 5000,
-        socketTimeout: 8000,
+        family: 4, // Force IPv4 family
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
