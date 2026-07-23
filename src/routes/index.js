@@ -11,6 +11,7 @@ const paymentRoutes = require("./payment.route");
 const videoSessionRoutes = require("./videoSession.route");
 const uploadRoutes = require("./upload.route");
 const adminRoutes = require("./admin.route");
+const astroInterviewRoutes = require("./astroInterview.route");
 
 router.use("/auth", authRoutes);
 router.use("/user", userRoutes);
@@ -21,5 +22,6 @@ router.use("/payment", paymentRoutes);
 router.use("/video-session", videoSessionRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/admin", adminRoutes);
+router.use("/interview", astroInterviewRoutes);
 
 module.exports = router;

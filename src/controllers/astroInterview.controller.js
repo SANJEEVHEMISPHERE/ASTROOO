@@ -1,0 +1,184 @@
+const astroInterviewService = require("../services/astroInterview.service");
+const Astrologer = require("../models/astro.model");
+
+// 1. ASTROLOGER REQUESTS INTERVIEW
+const requestInterview = async (req, res, next) => {
+    try {
+        let astrologerId = req.body.astrologerId || req.body.id || req.body.email;
+
+        // If logged in via JWT
+        if (!astrologerId && req.user) {
+            const astro = await Astrologer.findOne({ astrologerLogin: req.user.userId });
+            if (astro) astrologerId = astro._id;
+        }
+
+        const notes = req.body.notes || req.body.requestNotes || "";
+
+        const result = await astroInterviewService.requestInterview(astrologerId, notes);
+
+        return res.status(201).json({
+            success: true,
+            message: "Interview request submitted successfully. Waiting for admin to schedule.",
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 2. ADMIN SCHEDULES INTERVIEW (Date, Time, Google Meet Link)
+const scheduleInterview = async (req, res, next) => {
+    try {
+        const identifier = req.params.id || req.body.interviewId || req.body.astrologerId || req.body.email || req.body.id;
+        const { interviewDate, meetingLink, notes, interviewerNotes } = req.body;
+
+        if (!interviewDate) {
+            return res.status(400).json({
+                success: false,
+                message: "interviewDate is required to schedule interview"
+            });
+        }
+
+        const result = await astroInterviewService.scheduleInterview(
+            identifier,
+            interviewDate,
+            meetingLink,
+            interviewerNotes || notes
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Interview scheduled successfully with Google Meet link",
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 3. ADMIN EVALUATES RESULT (Pass / Fail)
+const evaluateInterview = async (req, res, next) => {
+    try {
+        const identifier = req.params.id || req.body.interviewId || req.body.astrologerId || req.body.email || req.body.id;
+        const resultInput = req.body.result || req.body.status;
+        const notes = req.body.interviewerNotes || req.body.notes || "";
+
+        if (!resultInput) {
+            return res.status(400).json({
+                success: false,
+                message: "Interview result is required ('pass' or 'fail')"
+            });
+        }
+
+        const result = await astroInterviewService.evaluateInterview(
+            identifier,
+            resultInput,
+            notes
+        );
+
+        const isPass = result.result === "pass";
+
+        return res.status(200).json({
+            success: true,
+            message: `Interview result set to ${result.result.toUpperCase()}. Astrologer status automatically updated to ${isPass ? "APPROVED" : "REJECTED"}.`,
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 4. GET ALL INTERVIEWS (Admin)
+const getAllInterviews = async (req, res, next) => {
+    try {
+        const filter = {};
+        if (req.query.status) filter.status = req.query.status;
+        if (req.query.result) filter.result = req.query.result;
+
+        const interviews = await astroInterviewService.getAllInterviews(filter);
+
+        return res.status(200).json({
+            success: true,
+            count: interviews.length,
+            data: interviews
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 5. GET PENDING INTERVIEW REQUESTS (Admin)
+const getPendingInterviews = async (req, res, next) => {
+    try {
+        const interviews = await astroInterviewService.getAllInterviews({ status: "requested" });
+
+        return res.status(200).json({
+            success: true,
+            count: interviews.length,
+            data: interviews
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 6. GET MY INTERVIEW / SPECIFIC ASTROLOGER INTERVIEW
+const getMyInterview = async (req, res, next) => {
+    try {
+        let identifier = req.params.id || req.query.astrologerId || req.query.email;
+
+        if (!identifier && req.user) {
+            const astro = await Astrologer.findOne({ astrologerLogin: req.user.userId });
+            if (astro) identifier = astro._id;
+        }
+
+        const interview = await astroInterviewService.getAstrologerInterview(identifier);
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: "No interview record found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: interview
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+module.exports = {
+    requestInterview,
+    scheduleInterview,
+    evaluateInterview,
+    getAllInterviews,
+    getPendingInterviews,
+    getMyInterview
+};
