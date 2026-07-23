@@ -1,10 +1,5 @@
 const nodemailer = require("nodemailer");
-const dns = require("dns");
-
-// Custom DNS lookup to strictly force IPv4 resolution on cloud platforms like Render
-const ipv4Lookup = (hostname, options, callback) => {
-    return dns.lookup(hostname, { family: 4 }, callback);
-};
+const dns = require("dns").promises;
 
 const isEmailConfigured = () => {
     const user = process.env.SMTP_USER;
@@ -12,28 +7,37 @@ const isEmailConfigured = () => {
     return Boolean(user && pass && user !== "your_email@gmail.com" && pass !== "your_gmail_app_password");
 };
 
-const getTransporter = () => {
+/**
+ * Creates Nodemailer transporter using direct IPv4 resolution to prevent ENETUNREACH on Render
+ */
+const getTransporter = async () => {
     if (!isEmailConfigured()) return null;
 
-    const host = process.env.SMTP_HOST || "smtp.gmail.com";
+    let targetHost = process.env.SMTP_HOST || "smtp.gmail.com";
+    const port = parseInt(process.env.SMTP_PORT || "465");
+    const isSecure = port === 465;
 
-    // Use Nodemailer's native 'gmail' service preset if using Gmail
-    if (host.includes("gmail")) {
-        return nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS
-            }
-        });
+    // Dynamically resolve IPv4 IP address for host to bypass IPv6 ENETUNREACH on cloud platforms
+    try {
+        const addresses = await dns.resolve4(targetHost);
+        if (addresses && addresses.length > 0) {
+            targetHost = addresses[0]; // Resolves to explicit IPv4 dotted-quad IP
+        }
+    } catch (err) {
+        console.warn("IPv4 DNS resolution fallback:", err.message);
     }
 
     return nodemailer.createTransport({
-        host: host,
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: process.env.SMTP_PORT === "465",
-        lookup: ipv4Lookup,
-        family: 4,
+        host: targetHost,
+        port: port,
+        secure: isSecure,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+        tls: {
+            servername: process.env.SMTP_HOST || "smtp.gmail.com",
+            rejectUnauthorized: false
+        },
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
@@ -45,10 +49,10 @@ const getTransporter = () => {
  * Send OTP to user email
  * @param {string} toEmail - Recipient email
  * @param {string} otpCode - 6 digit OTP code
- * @returns {Promise<{success: boolean, message: string, mock?: boolean}>}
+ * @returns {Promise<{success: boolean, message: string, mock?: boolean, messageId?: string}>}
  */
 const sendOtpEmail = async (toEmail, otpCode) => {
-    const transporter = getTransporter();
+    const transporter = await getTransporter();
 
     if (!isEmailConfigured() || !transporter) {
         console.log(`[DEVELOPMENT MOCK EMAIL] Password Reset OTP for ${toEmail} is: ${otpCode}`);
