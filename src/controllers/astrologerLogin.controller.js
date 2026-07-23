@@ -1,5 +1,7 @@
 const AstrologerLogin = require("../models/astrologerLogin.model");
 const Astrologer = require("../models/astro.model");
+const Otp = require("../models/otp.model");
+const twilioService = require("../services/twilio.service");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../utils/jwt");
 
@@ -152,6 +154,156 @@ exports.loginAstrologer = async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Server Error"
+        });
+    }
+};
+
+// 3. FORGOT PASSWORD - SEND OTP
+exports.forgotPasswordSendOtp = async (req, res) => {
+    try {
+        const identifier = req.body.email || req.body.phone || req.body.identifier;
+
+        if (!identifier) {
+            return res.status(400).json({
+                success: false,
+                message: "Email or phone number is required"
+            });
+        }
+
+        const query = identifier.includes("@")
+            ? { email: identifier.toLowerCase() }
+            : { phone: identifier };
+
+        const astrologer = await Astrologer.findOne(query);
+
+        if (!astrologer) {
+            return res.status(404).json({
+                success: false,
+                message: "Astrologer account not found with this email/phone"
+            });
+        }
+
+        // Generate custom 6 digit OTP for fallback / custom SMS mode
+        const targetPhone = astrologer.phone || identifier;
+        const customOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Save OTP in DB
+        await Otp.deleteMany({ phone: targetPhone });
+        await Otp.create({
+            phone: targetPhone,
+            otp: customOtp
+        });
+
+        // Trigger Twilio service if phone is available, or fallback
+        const result = await twilioService.sendOtp(targetPhone, customOtp);
+
+        return res.status(200).json({
+            success: true,
+            message: result.message || "OTP sent successfully to registered phone/email",
+            data: {
+                phone: targetPhone,
+                mock: result.mock || false,
+                ...(result.otp ? { otp: result.otp } : {})
+            }
+        });
+
+    } catch (error) {
+        console.error("Forgot Password Send OTP Error:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Server Error"
+        });
+    }
+};
+
+// 4. FORGOT PASSWORD - RESET PASSWORD
+exports.forgotPasswordReset = async (req, res) => {
+    try {
+        const identifier = req.body.email || req.body.phone || req.body.identifier;
+        const { otp, newPassword } = req.body;
+
+        if (!identifier || !otp || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Email/Phone, OTP code, and new password are required"
+            });
+        }
+
+        if (newPassword.length < 4) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 4 characters long"
+            });
+        }
+
+        const query = identifier.includes("@")
+            ? { email: identifier.toLowerCase() }
+            : { phone: identifier };
+
+        const astrologer = await Astrologer.findOne(query);
+
+        if (!astrologer) {
+            return res.status(404).json({
+                success: false,
+                message: "Astrologer account not found"
+            });
+        }
+
+        const targetPhone = astrologer.phone || identifier;
+
+        let isVerified = false;
+
+        // 1. Check Twilio Verify Service if configured
+        const twilioResult = await twilioService.verifyOtp(targetPhone, otp);
+        if (twilioResult.success && twilioResult.status === "approved") {
+            isVerified = true;
+        } else if (twilioResult.mock && twilioResult.success) {
+            isVerified = true;
+        } else {
+            // 2. Fallback: Check local DB Otp model
+            const existingOtp = await Otp.findOne({ phone: targetPhone, otp });
+            if (existingOtp) {
+                isVerified = true;
+            }
+        }
+
+        if (!isVerified) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid or expired OTP"
+            });
+        }
+
+        // Clean up OTP record
+        await Otp.deleteMany({ phone: targetPhone });
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update password in Astrologer model
+        astrologer.password = hashedPassword;
+        await astrologer.save();
+
+        // Update password in AstrologerLogin audit model if email exists
+        if (astrologer.email) {
+            try {
+                await AstrologerLogin.updateMany(
+                    { email: astrologer.email.toLowerCase() },
+                    { $set: { password: hashedPassword } }
+                );
+            } catch (e) {}
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Password reset successfully. You can now login with your new password."
+        });
+
+    } catch (error) {
+        console.error("Forgot Password Reset Error:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Server Error"
         });
     }
 };
