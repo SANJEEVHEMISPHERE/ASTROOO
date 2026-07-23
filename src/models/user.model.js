@@ -106,6 +106,12 @@ const UserSchema = new mongoose.Schema(
       ref: "UserLogin",
       default: null,
     },
+
+    walletBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,

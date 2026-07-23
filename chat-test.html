@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astro App - Real-time Live Chat & Billing Test</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0f172a; color: #fff; margin: 0; padding: 20px; text-align: center; }
+        h1 { color: #a855f7; margin-bottom: 5px; }
+        p { color: #94a3b8; font-size: 14px; }
+        
+        .container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; max-width: 1100px; margin: 20px auto; }
+        .card { background: #1e293b; border-radius: 12px; padding: 20px; flex: 1; min-width: 320px; border: 1px solid #334155; text-align: left; }
+        .card h2 { color: #38bdf8; font-size: 18px; margin-top: 0; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        
+        input, select, button { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; }
+        button { background: #9333ea; font-weight: bold; cursor: pointer; border: none; margin-top: 10px; }
+        button:hover { background: #7e22ce; }
+        .btn-danger { background: #ef4444; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-success { background: #22c55e; }
+        .btn-success:hover { background: #16a34a; }
+
+        .chat-box { background: #0f172a; border: 1px solid #334155; height: 280px; border-radius: 8px; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+        .msg { padding: 8px 12px; border-radius: 8px; max-width: 80%; font-size: 14px; line-height: 1.4; }
+        .msg-user { background: #9333ea; color: #fff; align-self: flex-end; }
+        .msg-astro { background: #334155; color: #e2e8f0; align-self: flex-start; }
+        .msg-system { background: #f59e0b; color: #000; align-self: center; font-size: 12px; font-weight: bold; }
+
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background: #f59e0b; color: #000; margin-left: 8px; }
+        .badge-active { background: #22c55e; color: #fff; }
+        .badge-ended { background: #ef4444; color: #fff; }
+        .typing { font-size: 12px; color: #38bdf8; font-style: italic; height: 16px; }
+    </style>
+</head>
+<body>
+
+    <h1>🔮 Astro App - Live Chat & Billing Test</h1>
+    <p>Test Real-time Socket.io Live Messaging & Per-Minute Billing Engine</p>
+
+    <div class="container">
+        <!-- Setup & Initiate Controls -->
+        <div class="card" style="max-width: 350px;">
+            <h2>⚙️ Session Setup</h2>
+            <label>Backend URL:</label>
+            <input type="text" id="backendUrl" value="http://localhost:3000">
+
+            <label>Session ID:</label>
+            <input type="text" id="sessionId" placeholder="Enter Session ID or Initiate">
+            
+            <button onclick="connectSocket()">🔌 Connect Socket</button>
+            <button class="btn-success" onclick="acceptChat()">✅ Accept Request (Astro)</button>
+            <button class="btn-danger" onclick="endChat()">🛑 End Chat Session</button>
+
+            <div style="margin-top: 15px; background: #0f172a; padding: 10px; border-radius: 6px;">
+                <div style="font-size: 13px; color: #94a3b8;">Status: <span id="sessionStatus" class="status-badge">DISCONNECTED</span></div>
+                <div style="font-size: 13px; color: #94a3b8; margin-top: 5px;">Elapsed: <b id="timerText" style="color:#22c55e">0 Mins</b></div>
+                <div style="font-size: 13px; color: #94a3b8; margin-top: 5px;">Wallet Balance: <b id="balanceText" style="color:#f59e0b">₹0</b></div>
+            </div>
+        </div>
+
+        <!-- Live Chat Box -->
+        <div class="card">
+            <h2>💬 Live Messaging Room</h2>
+            <div style="display: flex; gap: 10px;">
+                <select id="senderType">
+                    <option value="USER">User (Customer)</option>
+                    <option value="ASTROLOGER">Astrologer</option>
+                </select>
+                <input type="text" id="senderId" placeholder="Sender ID" value="user_123">
+            </div>
+
+            <div class="chat-box" id="chatBox">
+                <div class="msg msg-system">System: Enter Session ID and click Connect Socket to join live room.</div>
+            </div>
+            
+            <div class="typing" id="typingText"></div>
+
+            <div style="display: flex; gap: 10px; margin-top: 5px;">
+                <input type="text" id="msgInput" placeholder="Type a message..." oninput="handleTyping()" onkeypress="if(event.key==='Enter') sendMessage()">
+                <button style="width: 120px;" onclick="sendMessage()">Send 🚀</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let typingTimeout = null;
+
+        function connectSocket() {
+            const url = document.getElementById("backendUrl").value.trim();
+            const sessionId = document.getElementById("sessionId").value.trim();
+
+            if (!sessionId) {
+                alert("Please enter a Session ID!");
+                return;
+            }
+
+            if (socket) socket.disconnect();
+
+            socket = io(url);
+
+            socket.on("connect", () => {
+                console.log("Socket connected:", socket.id);
+                document.getElementById("sessionStatus").innerText = "CONNECTED";
+                document.getElementById("sessionStatus").className = "status-badge badge-active";
+
+                // Join session room
+                socket.emit("join_session", { sessionId });
+                addSystemMsg("Connected to room: session_" + sessionId);
+            });
+
+            // Receive Live Messages
+            socket.on("receive_message", (data) => {
+                console.log("New message:", data);
+                appendMessage(data.senderType, `${data.senderType}: ${data.text}`);
+            });
+
+            // Live Timer Ticks
+            socket.on("timer_tick", (data) => {
+                document.getElementById("timerText").innerText = data.elapsedMinutes + " Mins";
+                document.getElementById("balanceText").innerText = "₹" + data.remainingBalance;
+                addSystemMsg(`⏱️ [Billing Tick]: ${data.elapsedMinutes} mins passed. Remaining Balance: ₹${data.remainingBalance}`);
+            });
+
+            // Wallet Warning
+            socket.on("wallet_warning", (data) => {
+                addSystemMsg(`⚠️ [Warning]: ${data.message}`);
+            });
+
+            // Chat Accepted
+            socket.on("chat_accepted", (data) => {
+                document.getElementById("sessionStatus").innerText = "ACTIVE";
+                document.getElementById("sessionStatus").className = "status-badge badge-active";
+                addSystemMsg("🟢 Astrologer accepted the chat. Live billing started!");
+            });
+
+            // Chat Ended
+            socket.on("chat_ended", (data) => {
+                document.getElementById("sessionStatus").innerText = "COMPLETED";
+                document.getElementById("sessionStatus").className = "status-badge badge-ended";
+                addSystemMsg(`🔴 Session Ended: ${data.message || data.reason}`);
+            });
+
+            // Typing indicator
+            socket.on("user_typing", (data) => {
+                const typingDiv = document.getElementById("typingText");
+                if (data.isTyping) {
+                    typingDiv.innerText = `${data.senderType} is typing...`;
+                } else {
+                    typingDiv.innerText = "";
+                }
+            });
+        }
+
+        function sendMessage() {
+            const sessionId = document.getElementById("sessionId").value.trim();
+            const senderType = document.getElementById("senderType").value;
+            const senderId = document.getElementById("senderId").value.trim();
+            const text = document.getElementById("msgInput").value.trim();
+
+            if (!socket || !sessionId || !text) return;
+
+            socket.emit("send_message", {
+                sessionId,
+                senderId,
+                senderType,
+                text
+            });
+
+            document.getElementById("msgInput").value = "";
+            socket.emit("typing_status", { sessionId, senderType, isTyping: false });
+        }
+
+        function acceptChat() {
+            const sessionId = document.getElementById("sessionId").value.trim();
+            if (socket && sessionId) {
+                socket.emit("accept_chat_request", { sessionId });
+            }
+        }
+
+        function endChat() {
+            const sessionId = document.getElementById("sessionId").value.trim();
+            if (socket && sessionId) {
+                socket.emit("end_chat_session", { sessionId });
+            }
+        }
+
+        function handleTyping() {
+            const sessionId = document.getElementById("sessionId").value.trim();
+            const senderType = document.getElementById("senderType").value;
+            if (!socket || !sessionId) return;
+
+            socket.emit("typing_status", { sessionId, senderType, isTyping: true });
+
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                socket.emit("typing_status", { sessionId, senderType, isTyping: false });
+            }, 2000);
+        }
+
+        function appendMessage(type, text) {
+            const chatBox = document.getElementById("chatBox");
+            const div = document.createElement("div");
+            div.className = `msg ${type === 'USER' ? 'msg-user' : 'msg-astro'}`;
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function addSystemMsg(text) {
+            const chatBox = document.getElementById("chatBox");
+            const div = document.createElement("div");
+            div.className = "msg msg-system";
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>

@@ -12,6 +12,7 @@ const videoSessionRoutes = require("./videoSession.route");
 const uploadRoutes = require("./upload.route");
 const adminRoutes = require("./admin.route");
 const astroInterviewRoutes = require("./astroInterview.route");
+const chatRoutes = require("./chat.route");
 
 router.use("/auth", authRoutes);
 router.use("/user", userRoutes);
@@ -23,5 +24,6 @@ router.use("/video-session", videoSessionRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/admin", adminRoutes);
 router.use("/interview", astroInterviewRoutes);
+router.use("/chat", chatRoutes);
 
 module.exports = router;
