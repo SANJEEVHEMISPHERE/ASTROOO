@@ -28,9 +28,12 @@ router.put("/fail/:id", astroInterviewController.failInterview);
 router.put("/fail", astroInterviewController.failInterview);
 router.post("/fail", astroInterviewController.failInterview);
 
-// 4. Listing & Filtering
+// 4. Listing & Filtering (Admin)
 router.get("/all", astroInterviewController.getAllInterviews);
 router.get("/pending", astroInterviewController.getPendingInterviews);
+
+// 5. Astrologer Fetch Interview Details (Date, Time, Meeting Link, Notes)
+router.get("/details", astroInterviewController.getMyInterview);
 router.get("/my-interview", astroInterviewController.getMyInterview);
 router.get("/astrologer/:id", astroInterviewController.getMyInterview);
 

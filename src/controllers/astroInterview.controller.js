@@ -186,10 +186,10 @@ const getPendingInterviews = async (req, res, next) => {
     }
 };
 
-// 6. GET MY INTERVIEW / SPECIFIC ASTROLOGER INTERVIEW
+// 6. GET MY INTERVIEW / SPECIFIC ASTROLOGER INTERVIEW DETAILS
 const getMyInterview = async (req, res, next) => {
     try {
-        let identifier = req.params.id || req.query.astrologerId || req.query.email;
+        let identifier = req.params.id || req.query.astrologerId || req.query.email || req.query.id;
 
         if (!identifier && req.user) {
             const astro = await Astrologer.findOne({ astrologerLogin: req.user.userId });
@@ -201,13 +201,42 @@ const getMyInterview = async (req, res, next) => {
         if (!interview) {
             return res.status(404).json({
                 success: false,
-                message: "No interview record found"
+                message: "No interview record found for this astrologer"
             });
         }
 
+        const interviewObj = interview.toObject ? interview.toObject() : interview;
+
+        // Format clean Date and Time strings
+        let formattedDate = null;
+        let formattedTime = null;
+
+        if (interviewObj.interviewDate) {
+            const d = new Date(interviewObj.interviewDate);
+            formattedDate = d.toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "long",
+                year: "numeric"
+            });
+            formattedTime = d.toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true
+            });
+        }
+
+        const formattedResponse = {
+            ...interviewObj,
+            date: formattedDate,
+            time: formattedTime,
+            meetingLink: interviewObj.meetingLink || null,
+            notes: interviewObj.interviewerNotes || interviewObj.requestNotes || null
+        };
+
         return res.status(200).json({
             success: true,
-            data: interview
+            message: "Astrologer interview details fetched successfully",
+            data: formattedResponse
         });
 
     } catch (error) {
