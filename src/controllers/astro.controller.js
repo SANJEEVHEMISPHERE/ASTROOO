@@ -276,7 +276,14 @@ const rejectAstrologer = async (req, res, next) => {
 
 const toggleOnlineStatus = async (req, res, next) => {
     try {
-        let astrologerId = req.params.id || req.body.astrologerId;
+        let astrologerId = req.params.id || req.body.id || req.body.astrologerId;
+        const email = req.body.email;
+
+        // If email provided
+        if (!astrologerId && email) {
+            const astroByEmail = await Astrologer.findOne({ email: email.toLowerCase() });
+            if (astroByEmail) astrologerId = astroByEmail._id;
+        }
 
         // If logged in via JWT
         if (!astrologerId && req.user) {
@@ -284,7 +291,7 @@ const toggleOnlineStatus = async (req, res, next) => {
             if (astro) astrologerId = astro._id;
         }
 
-        // If no ID passed, toggle latest astrologer
+        // Fallback: latest astrologer if no ID/email provided
         if (!astrologerId) {
             const lastAstro = await Astrologer.findOne().sort({ createdAt: -1 });
             if (lastAstro) astrologerId = lastAstro._id;
@@ -297,8 +304,34 @@ const toggleOnlineStatus = async (req, res, next) => {
             });
         }
 
-        const isOnline = req.body.isOnline !== undefined ? Boolean(req.body.isOnline) : true;
-        const isAvailable = req.body.isAvailable !== undefined ? Boolean(req.body.isAvailable) : isOnline;
+        const currentAstro = await Astrologer.findById(astrologerId);
+        if (!currentAstro) {
+            return res.status(404).json({
+                success: false,
+                message: "Astrologer not found"
+            });
+        }
+
+        let isOnline;
+        if (typeof req.body.isOnline === "boolean") {
+            isOnline = req.body.isOnline;
+        } else if (typeof req.body.isOnline === "string") {
+            isOnline = req.body.isOnline.toLowerCase() === "true";
+        } else if (req.body.status !== undefined) {
+            isOnline = String(req.body.status).toLowerCase() === "online";
+        } else {
+            // Dynamic Toggle: flip current DB status if no value specified
+            isOnline = !currentAstro.isOnline;
+        }
+
+        let isAvailable;
+        if (typeof req.body.isAvailable === "boolean") {
+            isAvailable = req.body.isAvailable;
+        } else if (typeof req.body.isAvailable === "string") {
+            isAvailable = req.body.isAvailable.toLowerCase() === "true";
+        } else {
+            isAvailable = isOnline;
+        }
 
         const updatedAstrologer = await astroService.toggleOnlineStatus(
             astrologerId,
