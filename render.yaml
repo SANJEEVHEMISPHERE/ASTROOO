@@ -16,3 +16,10 @@ services:
         value: 7d
       - key: TULO_JWT_SECRET
         sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_SERVICE_SID
+        sync: false
+

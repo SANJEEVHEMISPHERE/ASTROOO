@@ -1,9 +1,13 @@
 const { verifyTuloToken } = require("../config/tulo");
 const User = require("../models/user.model");
+const Otp = require("../models/otp.model");
+const twilioService = require("./twilio.service");
 const { generateToken } = require("../utils/jwt");
 
+/**
+ * Legacy/Tulo login handler
+ */
 const login = async (tuloToken) => {
-
     // Verify Tulo Token
     const { tuloId, phone } = await verifyTuloToken(tuloToken);
 
@@ -17,14 +21,12 @@ const login = async (tuloToken) => {
 
     // Create User if not found
     if (!user) {
-
         user = await User.create({
             tuloId,
             phone: phone || `+0000000000_${tuloId}`,
             role: "user",
             isProfileCompleted: false
         });
-
     } else if (!user.tuloId) {
         // Link tuloId if user previously existed by phone
         user.tuloId = tuloId;
@@ -41,9 +43,95 @@ const login = async (tuloToken) => {
         user,
         token
     };
+};
 
+/**
+ * Send OTP via Twilio
+ * @param {string} phone - User phone number
+ */
+const sendOtp = async (phone) => {
+    if (!phone) {
+        const error = new Error("Phone number is required");
+        error.status = 400;
+        throw error;
+    }
+
+    // Generate custom 6 digit OTP for fallback / custom SMS mode
+    const customOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store/Update OTP in DB for local verification fallback
+    await Otp.deleteMany({ phone }); // Remove previous OTPs for this phone
+    await Otp.create({
+        phone,
+        otp: customOtp
+    });
+
+    // Trigger Twilio service
+    const result = await twilioService.sendOtp(phone, customOtp);
+    return result;
+};
+
+/**
+ * Verify OTP and authenticate user
+ * @param {string} phone - User phone number
+ * @param {string} otp - OTP code entered by user
+ */
+const verifyOtp = async (phone, otp) => {
+    if (!phone || !otp) {
+        const error = new Error("Phone number and OTP code are required");
+        error.status = 400;
+        throw error;
+    }
+
+    let isVerified = false;
+
+    // 1. Check Twilio Verify Service if configured
+    const twilioResult = await twilioService.verifyOtp(phone, otp);
+    if (twilioResult.success && twilioResult.status === "approved") {
+        isVerified = true;
+    } else if (twilioResult.mock && twilioResult.success) {
+        isVerified = true;
+    } else {
+        // 2. Fallback: Check local DB Otp model
+        const existingOtp = await Otp.findOne({ phone, otp });
+        if (existingOtp) {
+            isVerified = true;
+        }
+    }
+
+    if (!isVerified) {
+        const error = new Error("Invalid or expired OTP");
+        error.status = 400;
+        throw error;
+    }
+
+    // Clean up OTP record from DB
+    await Otp.deleteMany({ phone });
+
+    // Find or create User
+    let user = await User.findOne({ phone });
+    if (!user) {
+        user = await User.create({
+            phone,
+            role: "user",
+            isProfileCompleted: false
+        });
+    }
+
+    // Generate JWT token
+    const token = generateToken({
+        userId: user._id,
+        role: user.role
+    });
+
+    return {
+        user,
+        token
+    };
 };
 
 module.exports = {
-    login
+    login,
+    sendOtp,
+    verifyOtp
 };

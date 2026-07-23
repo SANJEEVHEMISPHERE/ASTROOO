@@ -67,8 +67,9 @@ const UserSchema = new mongoose.Schema(
 
     tuloId: {
       type: String,
-      required: true,
+      default: null,
       unique: true,
+      sparse: true,
     },
 
     role: {
