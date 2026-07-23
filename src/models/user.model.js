@@ -20,9 +20,35 @@ const UserSchema = new mongoose.Schema(
       trim: true,
     },
 
+    gender: {
+      type: String,
+      enum: ["male", "female", "other"],
+      default: null,
+      lowercase: true,
+      trim: true,
+    },
+
     dateofbirth: {
       type: Date,
       default: null,
+    },
+
+    timeofbirth: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    placeofbirth: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    city: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     state: {
@@ -32,12 +58,6 @@ const UserSchema = new mongoose.Schema(
     },
 
     country: {
-      type: String,
-      default: null,
-      trim: true,
-    },
-
-    placeofbirth: {
       type: String,
       default: null,
       trim: true,
