@@ -2,6 +2,7 @@ const AstrologerLogin = require("../models/astrologerLogin.model");
 const Astrologer = require("../models/astro.model");
 const Otp = require("../models/otp.model");
 const twilioService = require("../services/twilio.service");
+const emailService = require("../services/email.service");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../utils/jwt");
 
@@ -158,7 +159,7 @@ exports.loginAstrologer = async (req, res) => {
     }
 };
 
-// 3. FORGOT PASSWORD - SEND OTP
+// 3. FORGOT PASSWORD - SEND OTP (Email & Twilio SMS)
 exports.forgotPasswordSendOtp = async (req, res) => {
     try {
         const identifier = req.body.email || req.body.phone || req.body.identifier;
@@ -170,7 +171,8 @@ exports.forgotPasswordSendOtp = async (req, res) => {
             });
         }
 
-        const query = identifier.includes("@")
+        const isEmailInput = identifier.includes("@");
+        const query = isEmailInput
             ? { email: identifier.toLowerCase() }
             : { phone: identifier };
 
@@ -183,27 +185,52 @@ exports.forgotPasswordSendOtp = async (req, res) => {
             });
         }
 
-        // Generate custom 6 digit OTP for fallback / custom SMS mode
-        const targetPhone = astrologer.phone || identifier;
+        const targetEmail = astrologer.email || (isEmailInput ? identifier : null);
+        const targetPhone = astrologer.phone || (!isEmailInput ? identifier : null);
         const customOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // Save OTP in DB
-        await Otp.deleteMany({ phone: targetPhone });
-        await Otp.create({
-            phone: targetPhone,
-            otp: customOtp
-        });
+        // Save OTP in DB for phone if available
+        if (targetPhone) {
+            await Otp.deleteMany({ phone: targetPhone });
+            await Otp.create({ phone: targetPhone, otp: customOtp });
+        }
 
-        // Trigger Twilio service if phone is available, or fallback
-        const result = await twilioService.sendOtp(targetPhone, customOtp);
+        // Save OTP in DB for email if available
+        if (targetEmail) {
+            await Otp.deleteMany({ phone: targetEmail.toLowerCase() });
+            await Otp.create({ phone: targetEmail.toLowerCase(), otp: customOtp });
+        }
+
+        let smsResult = null;
+        let emailResult = null;
+
+        // 1. Send SMS via Twilio if phone is available
+        if (targetPhone) {
+            try {
+                smsResult = await twilioService.sendOtp(targetPhone, customOtp);
+            } catch (err) {
+                console.warn("Twilio SMS send error:", err.message);
+            }
+        }
+
+        // 2. Send Email via Nodemailer if email is available
+        if (targetEmail) {
+            try {
+                emailResult = await emailService.sendOtpEmail(targetEmail, customOtp);
+            } catch (err) {
+                console.warn("Email send error:", err.message);
+            }
+        }
 
         return res.status(200).json({
             success: true,
-            message: result.message || "OTP sent successfully to registered phone/email",
+            message: "OTP sent successfully to registered email/phone",
             data: {
+                email: targetEmail,
                 phone: targetPhone,
-                mock: result.mock || false,
-                ...(result.otp ? { otp: result.otp } : {})
+                otp: customOtp,
+                sms: smsResult,
+                email: emailResult
             }
         });
 
