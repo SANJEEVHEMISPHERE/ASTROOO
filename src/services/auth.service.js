@@ -1,5 +1,6 @@
 const { verifyTuloToken } = require("../config/tulo");
 const User = require("../models/user.model");
+const UserLogin = require("../models/userLogin.model");
 const Otp = require("../models/otp.model");
 const twilioService = require("./twilio.service");
 const { generateToken } = require("../utils/jwt");
@@ -31,6 +32,23 @@ const login = async (tuloToken) => {
         // Link tuloId if user previously existed by phone
         user.tuloId = tuloId;
         await user.save();
+    }
+
+    // Record login entry in UserLogin model
+    try {
+        const userLoginRecord = await UserLogin.create({
+            user: user._id,
+            phone: user.phone,
+            email: user.email || null,
+            tuloId: user.tuloId || tuloId,
+            loginMethod: "tulo",
+            lastLoginAt: new Date()
+        });
+
+        user.userLogin = userLoginRecord._id;
+        await user.save();
+    } catch (e) {
+        console.warn("UserLogin audit log warning:", e.message);
     }
 
     // Generate Backend JWT
@@ -116,6 +134,23 @@ const verifyOtp = async (phone, otp) => {
             role: "user",
             isProfileCompleted: false
         });
+    }
+
+    // Record login entry in UserLogin model
+    try {
+        const userLoginRecord = await UserLogin.create({
+            user: user._id,
+            phone: user.phone,
+            email: user.email || null,
+            tuloId: user.tuloId || null,
+            loginMethod: "otp",
+            lastLoginAt: new Date()
+        });
+
+        user.userLogin = userLoginRecord._id;
+        await user.save();
+    } catch (e) {
+        console.warn("UserLogin audit log warning:", e.message);
     }
 
     // Generate JWT token

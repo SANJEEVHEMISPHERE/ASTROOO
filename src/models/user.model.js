@@ -100,6 +100,12 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    userLogin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "UserLogin",
+      default: null,
+    },
   },
   {
     timestamps: true,
