@@ -5,6 +5,12 @@ const { startBillingTimer, stopBillingTimer } = require("../services/chatBilling
 
 let io;
 
+const extractSessionId = (data) => {
+    if (!data) return null;
+    if (typeof data === "string") return data;
+    return data.sessionId || data.chatId || data._id || data.id || (data.session && (data.session._id || data.session.id)) || null;
+};
+
 const initSocket = (server) => {
     io = new Server(server, {
         cors: {
@@ -17,26 +23,38 @@ const initSocket = (server) => {
         console.log(`🔌 New Socket Connection Established: ${socket.id}`);
 
         // 1. Join Chat Session Room
-        socket.on("join_session", async ({ sessionId }) => {
+        socket.on("join_session", async (data) => {
+            const sessionId = extractSessionId(data);
             if (!sessionId) return;
+
             const roomName = `session_${sessionId}`;
             socket.join(roomName);
             console.log(`👤 Socket ${socket.id} joined room: ${roomName}`);
 
-            // Send past message history or session state if needed
             try {
                 const session = await ChatSession.findById(sessionId);
-                socket.emit("session_state", { session });
+                socket.emit("session_state", { 
+                    session,
+                    sessionId: session ? session._id : sessionId,
+                    _id: session ? session._id : sessionId
+                });
             } catch (err) {
                 console.error("Error fetching session on join:", err);
             }
         });
 
         // 2. Real-Time Instant Messaging
-        socket.on("send_message", async ({ sessionId, senderId, senderType, messageType = "text", text, mediaUrl }) => {
+        socket.on("send_message", async (data) => {
             try {
+                const sessionId = extractSessionId(data);
+                const senderId = data ? (data.senderId || data.userId || data.astrologerId) : null;
+                const senderType = data ? data.senderType : null;
+                const messageType = (data && data.messageType) || "text";
+                const text = data ? data.text : "";
+                const mediaUrl = data ? data.mediaUrl : null;
+
                 if (!sessionId || !senderId || (!text && !mediaUrl)) {
-                    socket.emit("error", { message: "Invalid message payload" });
+                    socket.emit("error", { message: "Invalid message payload: missing sessionId, senderId, or content." });
                     return;
                 }
 
@@ -56,8 +74,15 @@ const initSocket = (server) => {
                     mediaUrl
                 });
 
+                const formattedMsg = {
+                    ...newMessage.toObject(),
+                    sessionId: newMessage.session,
+                    _id: newMessage._id,
+                    id: newMessage._id
+                };
+
                 // Broadcast to all clients in this session room
-                io.to(`session_${sessionId}`).emit("receive_message", newMessage);
+                io.to(`session_${sessionId}`).emit("receive_message", formattedMsg);
             } catch (error) {
                 console.error("Socket send_message error:", error);
                 socket.emit("error", { message: "Failed to send message" });
@@ -65,17 +90,26 @@ const initSocket = (server) => {
         });
 
         // 3. Typing Indicator Status
-        socket.on("typing_status", ({ sessionId, senderType, isTyping }) => {
+        socket.on("typing_status", (data) => {
+            const sessionId = extractSessionId(data);
             if (!sessionId) return;
-            socket.to(`session_${sessionId}`).emit("user_typing", { senderType, isTyping });
+            socket.to(`session_${sessionId}`).emit("user_typing", { 
+                senderType: data.senderType, 
+                isTyping: Boolean(data.isTyping),
+                sessionId,
+                _id: sessionId
+            });
         });
 
         // 4. Astrologer Accepts Chat Request
-        socket.on("accept_chat_request", async ({ sessionId }) => {
+        socket.on("accept_chat_request", async (data) => {
             try {
+                const sessionId = extractSessionId(data);
+                if (!sessionId) return;
+
                 const session = await ChatSession.findById(sessionId);
                 if (!session || session.status !== "PENDING") {
-                    socket.emit("error", { message: "Session is no longer pending." });
+                    socket.emit("error", { message: "Session is no longer pending or not found." });
                     return;
                 }
 
@@ -86,30 +120,40 @@ const initSocket = (server) => {
                 // Start per-minute recurring timer
                 startBillingTimer(sessionId, io);
 
-                io.to(`session_${sessionId}`).emit("chat_accepted", {
+                const responsePayload = {
                     success: true,
                     message: "Astrologer accepted chat request. Live session started!",
-                    session
-                });
+                    session,
+                    sessionId: session._id,
+                    _id: session._id,
+                    id: session._id
+                };
+
+                io.to(`session_${sessionId}`).emit("chat_accepted", responsePayload);
             } catch (err) {
                 console.error("accept_chat_request socket error:", err);
             }
         });
 
         // 5. Astrologer Rejects Chat Request
-        socket.on("reject_chat_request", async ({ sessionId, reason }) => {
+        socket.on("reject_chat_request", async (data) => {
             try {
+                const sessionId = extractSessionId(data);
+                if (!sessionId) return;
+
                 const session = await ChatSession.findById(sessionId);
                 if (session) {
                     session.status = "REJECTED";
-                    session.rejectionReason = reason || "Astrologer unavailable";
+                    session.rejectionReason = data.reason || "Astrologer unavailable";
                     await session.save();
 
                     io.to(`session_${sessionId}`).emit("chat_rejected", {
                         success: false,
                         message: "Astrologer rejected chat request.",
                         reason: session.rejectionReason,
-                        session
+                        session,
+                        sessionId: session._id,
+                        _id: session._id
                     });
                 }
             } catch (err) {
@@ -117,9 +161,12 @@ const initSocket = (server) => {
             }
         });
 
-        // 6. End Chat Session Manually (User or Astrologer)
-        socket.on("end_chat_session", async ({ sessionId }) => {
+        // 6. End Chat Session Manually
+        socket.on("end_chat_session", async (data) => {
             try {
+                const sessionId = extractSessionId(data);
+                if (!sessionId) return;
+
                 const session = await ChatSession.findById(sessionId);
                 if (session && session.status === "ACTIVE") {
                     stopBillingTimer(sessionId);
@@ -133,7 +180,9 @@ const initSocket = (server) => {
                     io.to(`session_${sessionId}`).emit("chat_ended", {
                         success: true,
                         message: "Chat session ended successfully.",
-                        session
+                        session,
+                        sessionId: session._id,
+                        _id: session._id
                     });
                 }
             } catch (err) {

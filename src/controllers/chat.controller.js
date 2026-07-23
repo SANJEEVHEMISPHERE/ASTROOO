@@ -4,6 +4,16 @@ const User = require("../models/user.model");
 const Astrologer = require("../models/astro.model");
 const { startBillingTimer, stopBillingTimer } = require("../services/chatBilling.service");
 
+const getSessionIdFromBodyOrParams = (req) => {
+    const body = req.body || {};
+    const params = req.params || {};
+    const query = req.query || {};
+
+    return body.sessionId || body.chatId || body._id || body.id ||
+           params.sessionId || params.id ||
+           query.sessionId || query.chatId || query.id || null;
+};
+
 /**
  * 1. Initiate Chat Request (User side)
  */
@@ -36,7 +46,7 @@ exports.initiateChat = async (req, res, next) => {
         }
 
         const perMinuteRate = astrologer.consultationFee || 0;
-        const minBalanceRequired = perMinuteRate * 2; // Minimum 2 minutes balance required to initiate chat
+        const minBalanceRequired = perMinuteRate * 2;
 
         if ((user.walletBalance || 0) < minBalanceRequired) {
             return res.status(400).json({
@@ -45,47 +55,47 @@ exports.initiateChat = async (req, res, next) => {
             });
         }
 
-        // Check if there is already an ACTIVE or PENDING session
-        const existingSession = await ChatSession.findOne({
+        let session = await ChatSession.findOne({
             user: currentUserId,
             astrologer: astrologerId,
             status: { $in: ["PENDING", "ACTIVE"] }
         });
 
-        if (existingSession) {
-            return res.status(200).json({
-                success: true,
-                message: "Existing session found.",
-                data: existingSession
+        if (!session) {
+            session = await ChatSession.create({
+                user: currentUserId,
+                astrologer: astrologerId,
+                perMinuteRate,
+                status: "PENDING"
             });
         }
 
-        // Create new PENDING chat session
-        const session = await ChatSession.create({
-            user: currentUserId,
-            astrologer: astrologerId,
-            perMinuteRate,
-            status: "PENDING"
-        });
+        const responseData = {
+            ...session.toObject(),
+            sessionId: session._id,
+            chatId: session._id,
+            _id: session._id,
+            id: session._id
+        };
 
-        // Broadcast to astrologer socket if IO available
+        // Broadcast to astrologer socket
         try {
             const { getIO } = require("../config/socket");
             const io = getIO();
             if (io) {
                 io.to(`session_${session._id}`).emit("incoming_chat_request", {
                     message: "New incoming chat request!",
-                    session
+                    session: responseData,
+                    sessionId: session._id,
+                    _id: session._id
                 });
             }
-        } catch (e) {
-            // socket IO might not be attached during pure REST calls
-        }
+        } catch (e) {}
 
         return res.status(201).json({
             success: true,
             message: "Chat request initiated successfully. Waiting for astrologer acceptance.",
-            data: session
+            data: responseData
         });
 
     } catch (error) {
@@ -98,12 +108,12 @@ exports.initiateChat = async (req, res, next) => {
  */
 exports.acceptChat = async (req, res, next) => {
     try {
-        const { sessionId } = req.body;
+        const sessionId = getSessionIdFromBodyOrParams(req);
 
         if (!sessionId) {
             return res.status(400).json({
                 success: false,
-                message: "sessionId is required."
+                message: "sessionId (or chatId / _id / id) is required."
             });
         }
 
@@ -115,7 +125,7 @@ exports.acceptChat = async (req, res, next) => {
             });
         }
 
-        if (session.status !== "PENDING") {
+        if (session.status !== "PENDING" && session.status !== "ACTIVE") {
             return res.status(400).json({
                 success: false,
                 message: `Session is currently '${session.status}', cannot accept.`
@@ -123,7 +133,7 @@ exports.acceptChat = async (req, res, next) => {
         }
 
         session.status = "ACTIVE";
-        session.startTime = new Date();
+        if (!session.startTime) session.startTime = new Date();
         await session.save();
 
         // Start per-minute billing recurring timer
@@ -135,10 +145,18 @@ exports.acceptChat = async (req, res, next) => {
             startBillingTimer(sessionId, null);
         }
 
+        const responseData = {
+            ...session.toObject(),
+            sessionId: session._id,
+            chatId: session._id,
+            _id: session._id,
+            id: session._id
+        };
+
         return res.status(200).json({
             success: true,
             message: "Chat request accepted. Session is now ACTIVE.",
-            data: session
+            data: responseData
         });
 
     } catch (error) {
@@ -151,12 +169,12 @@ exports.acceptChat = async (req, res, next) => {
  */
 exports.rejectChat = async (req, res, next) => {
     try {
-        const { sessionId, reason } = req.body;
+        const sessionId = getSessionIdFromBodyOrParams(req);
 
         if (!sessionId) {
             return res.status(400).json({
                 success: false,
-                message: "sessionId is required."
+                message: "sessionId (or chatId / _id / id) is required."
             });
         }
 
@@ -169,13 +187,21 @@ exports.rejectChat = async (req, res, next) => {
         }
 
         session.status = "REJECTED";
-        session.rejectionReason = reason || "Astrologer rejected the request.";
+        session.rejectionReason = req.body.reason || "Astrologer rejected the request.";
         await session.save();
+
+        const responseData = {
+            ...session.toObject(),
+            sessionId: session._id,
+            chatId: session._id,
+            _id: session._id,
+            id: session._id
+        };
 
         return res.status(200).json({
             success: true,
             message: "Chat request rejected successfully.",
-            data: session
+            data: responseData
         });
 
     } catch (error) {
@@ -184,16 +210,16 @@ exports.rejectChat = async (req, res, next) => {
 };
 
 /**
- * 4. End Active Chat Session (User or Astrologer)
+ * 4. End Active Chat Session
  */
 exports.endChat = async (req, res, next) => {
     try {
-        const { sessionId } = req.body;
+        const sessionId = getSessionIdFromBodyOrParams(req);
 
         if (!sessionId) {
             return res.status(400).json({
                 success: false,
-                message: "sessionId is required."
+                message: "sessionId (or chatId / _id / id) is required."
             });
         }
 
@@ -215,10 +241,18 @@ exports.endChat = async (req, res, next) => {
             await session.save();
         }
 
+        const responseData = {
+            ...session.toObject(),
+            sessionId: session._id,
+            chatId: session._id,
+            _id: session._id,
+            id: session._id
+        };
+
         return res.status(200).json({
             success: true,
             message: "Chat session ended successfully.",
-            data: session
+            data: responseData
         });
 
     } catch (error) {
@@ -231,12 +265,12 @@ exports.endChat = async (req, res, next) => {
  */
 exports.getChatHistory = async (req, res, next) => {
     try {
-        const { sessionId } = req.params;
+        const sessionId = getSessionIdFromBodyOrParams(req);
 
         if (!sessionId) {
             return res.status(400).json({
                 success: false,
-                message: "sessionId param is required."
+                message: "sessionId is required."
             });
         }
 
@@ -266,10 +300,17 @@ exports.getMySessions = async (req, res, next) => {
         if (astrologerId) query.astrologer = astrologerId;
         if (status) query.status = status;
 
-        const sessions = await ChatSession.find(query)
+        const rawSessions = await ChatSession.find(query)
             .populate("user", "firstname lastname email phone profileImage")
             .populate("astrologer", "name profileImage consultationFee rating")
             .sort({ createdAt: -1 });
+
+        const sessions = rawSessions.map(s => ({
+            ...s.toObject(),
+            sessionId: s._id,
+            chatId: s._id,
+            id: s._id
+        }));
 
         return res.status(200).json({
             success: true,
@@ -287,7 +328,8 @@ exports.getMySessions = async (req, res, next) => {
  */
 exports.rateChat = async (req, res, next) => {
     try {
-        const { sessionId, rating, review } = req.body;
+        const sessionId = getSessionIdFromBodyOrParams(req);
+        const { rating, review } = req.body;
 
         if (!sessionId || !rating) {
             return res.status(400).json({
