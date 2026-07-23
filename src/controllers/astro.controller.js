@@ -55,6 +55,9 @@ const normalizeAstroData = async (req) => {
     if (body.certificateFile !== undefined && body.certificateFile !== null) payload.certificateFile = body.certificateFile;
     if (body.consultationFee !== undefined && body.consultationFee !== null) payload.consultationFee = body.consultationFee;
 
+    if (body.isOnline !== undefined && body.isOnline !== null) payload.isOnline = Boolean(body.isOnline);
+    if (body.isAvailable !== undefined && body.isAvailable !== null) payload.isAvailable = Boolean(body.isAvailable);
+
     const strengths = body.selectedStrengths || body.strengths;
     if (strengths && Array.isArray(strengths) && strengths.length > 0) {
         payload.strengths = strengths;
@@ -79,7 +82,6 @@ const createAstrologer = async (req, res, next) => {
 
         let astrologer = null;
 
-        // Try finding existing astrologer profile by astrologerLogin ID or email
         const queryConditions = [];
         if (payload.astrologerLogin) queryConditions.push({ astrologerLogin: payload.astrologerLogin });
         if (payload.email) queryConditions.push({ email: payload.email });
@@ -91,7 +93,6 @@ const createAstrologer = async (req, res, next) => {
             }
         }
 
-        // Fallback: If no email or ID was passed, update the latest registered astrologer profile
         if (!astrologer) {
             const lastAstrologer = await Astrologer.findOne().sort({ createdAt: -1 });
             if (lastAstrologer) {
@@ -116,7 +117,30 @@ const createAstrologer = async (req, res, next) => {
 
 const getAllAstrologers = async (req, res, next) => {
     try {
-        const astrologers = await astroService.getAllAstrologers();
+        const filter = {};
+        if (req.query.online === "true" || req.query.isOnline === "true") {
+            filter.isOnline = true;
+        }
+        if (req.query.available === "true" || req.query.isAvailable === "true") {
+            filter.isAvailable = true;
+        }
+
+        const astrologers = await astroService.getAllAstrologers(filter);
+
+        return res.status(200).json({
+            success: true,
+            count: astrologers.length,
+            data: astrologers
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getOnlineAstrologers = async (req, res, next) => {
+    try {
+        const astrologers = await astroService.getOnlineAstrologers();
 
         return res.status(200).json({
             success: true,
@@ -136,6 +160,49 @@ const getAstrologerById = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             data: astrologer
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const toggleOnlineStatus = async (req, res, next) => {
+    try {
+        let astrologerId = req.params.id || req.body.astrologerId;
+
+        // If logged in via JWT
+        if (!astrologerId && req.user) {
+            const astro = await Astrologer.findOne({ astrologerLogin: req.user.userId });
+            if (astro) astrologerId = astro._id;
+        }
+
+        // If no ID passed, toggle latest astrologer
+        if (!astrologerId) {
+            const lastAstro = await Astrologer.findOne().sort({ createdAt: -1 });
+            if (lastAstro) astrologerId = lastAstro._id;
+        }
+
+        if (!astrologerId) {
+            return res.status(404).json({
+                success: false,
+                message: "Astrologer not found"
+            });
+        }
+
+        const isOnline = req.body.isOnline !== undefined ? Boolean(req.body.isOnline) : true;
+        const isAvailable = req.body.isAvailable !== undefined ? Boolean(req.body.isAvailable) : isOnline;
+
+        const updatedAstrologer = await astroService.toggleOnlineStatus(
+            astrologerId,
+            isOnline,
+            isAvailable
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: `Astrologer status updated to ${isOnline ? "ONLINE" : "OFFLINE"}`,
+            data: updatedAstrologer
         });
 
     } catch (error) {
@@ -179,7 +246,9 @@ const deleteAstrologer = async (req, res, next) => {
 module.exports = {
     createAstrologer,
     getAllAstrologers,
+    getOnlineAstrologers,
     getAstrologerById,
+    toggleOnlineStatus,
     updateAstrologer,
     deleteAstrologer
 };

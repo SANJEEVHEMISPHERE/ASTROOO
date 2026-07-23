@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astro App - Agora 1-on-1 Video Call Test</title>
+    <script src="https://download.agora.io/sdk/web/AgoraRTC_N-4.20.0.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0f172a; color: #fff; margin: 0; padding: 20px; text-align: center; }
+        h1 { color: #a855f7; margin-bottom: 5px; }
+        p { color: #94a3b8; font-size: 14px; }
+        
+        .controls { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+        input { padding: 12px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; flex: 1; min-width: 180px; }
+        button { padding: 12px 24px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-join { background: #9333ea; color: #fff; }
+        .btn-join:hover { background: #7e22ce; }
+        .btn-leave { background: #ef4444; color: #fff; }
+        .btn-leave:hover { background: #dc2626; }
+
+        .video-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+        .video-card { background: #1e293b; border-radius: 12px; overflow: hidden; width: 420px; height: 310px; position: relative; border: 2px solid #334155; }
+        .video-card h3 { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); padding: 5px 12px; border-radius: 20px; margin: 0; font-size: 13px; z-index: 10; }
+        .player { width: 100%; height: 100%; background: #000; }
+        .status { margin-top: 15px; font-weight: 500; color: #38bdf8; }
+    </style>
+</head>
+<body>
+
+    <h1>🔮 Astro App Video Call Test</h1>
+    <p>Test 1-on-1 Video Calling with Live Backend API & Agora Web SDK</p>
+
+    <div class="controls">
+        <input type="text" id="channel" value="room_astro_101" placeholder="Channel Name">
+        <button class="btn-join" onclick="joinCall()">🎥 Join Video Call</button>
+        <button class="btn-leave" onclick="leaveCall()">🛑 Leave Call</button>
+    </div>
+
+    <div class="status" id="statusText">Status: Ready to connect...</div>
+
+    <div class="video-container">
+        <div class="video-card">
+            <h3>📹 My Video (Local Stream)</h3>
+            <div id="local-player" class="player"></div>
+        </div>
+        <div class="video-card">
+            <h3>👤 Astrologer / User (Remote Stream)</h3>
+            <div id="remote-player" class="player"></div>
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = "https://kalpjoytish-backend.onrender.com";
+        let rtc = {
+            client: null,
+            localAudioTrack: null,
+            localVideoTrack: null
+        };
+
+        async function joinCall() {
+            const channelName = document.getElementById("channel").value.trim();
+            const statusText = document.getElementById("statusText");
+
+            if (!channelName) {
+                alert("Please enter a channel name!");
+                return;
+            }
+
+            try {
+                statusText.innerText = "⏳ Requesting Agora RTC Token from Live Backend...";
+                
+                // 1. Fetch Agora Token from Backend API
+                const res = await fetch(`${BACKEND_URL}/api/video-session/generate-token`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ channelName, uid: 0 })
+                });
+
+                const data = await res.json();
+                if (!data.success) {
+                    alert("Token Generation Failed: " + data.message);
+                    return;
+                }
+
+                const { token, appId } = data.data;
+                statusText.innerText = "Connecting to Agora Channel: " + channelName + "...";
+
+                // 2. Initialize Agora Client
+                rtc.client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+
+                // Handle Remote User Joining
+                rtc.client.on("user-published", async (user, mediaType) => {
+                    await rtc.client.subscribe(user, mediaType);
+                    if (mediaType === "video") {
+                        user.videoTrack.play("remote-player");
+                        statusText.innerText = "🎉 Remote Video Connected!";
+                    }
+                    if (mediaType === "audio") {
+                        user.audioTrack.play();
+                    }
+                });
+
+                rtc.client.on("user-unpublished", (user) => {
+                    document.getElementById("remote-player").innerHTML = "";
+                    statusText.innerText = "Remote User Left the Call.";
+                });
+
+                // 3. Join Channel
+                const uid = await rtc.client.join(appId === "MOCK_AGORA_APP_ID" ? "12345678" : appId, channelName, token, null);
+
+                // 4. Create and Play Local Microphone & Camera Tracks
+                rtc.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+                rtc.localVideoTrack = await AgoraRTC.createCameraVideoTrack();
+
+                rtc.localVideoTrack.play("local-player");
+                await rtc.client.publish([rtc.localAudioTrack, rtc.localVideoTrack]);
+
+                statusText.innerText = "🟢 Video Call Active! Open this page in a second browser window with the same channel name to test 1-on-1 call.";
+
+            } catch (err) {
+                console.error("Video Call Error:", err);
+                statusText.innerText = "❌ Call Error: " + err.message;
+            }
+        }
+
+        async function leaveCall() {
+            if (rtc.localAudioTrack) {
+                rtc.localAudioTrack.close();
+            }
+            if (rtc.localVideoTrack) {
+                rtc.localVideoTrack.close();
+            }
+            if (rtc.client) {
+                await rtc.client.leave();
+            }
+            document.getElementById("local-player").innerHTML = "";
+            document.getElementById("remote-player").innerHTML = "";
+            document.getElementById("statusText").innerText = "🔴 Call Ended.";
+        }
+    </script>
+</body>
+</html>

@@ -5,30 +5,22 @@ const router = express.Router();
 const astroController = require("../controllers/astro.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
 
-router.post(
-    "/create",
-    astroController.createAstrologer
-);
-router.get(
-    "/all",
-    astroController.getAllAstrologers
-);
+// Profile & Creation
+router.post("/create", astroController.createAstrologer);
 
-router.get(
-    "/:id",
-    astroController.getAstrologerById
-);
+// Listing & Filtering
+router.get("/all", astroController.getAllAstrologers);
+router.get("/online", astroController.getOnlineAstrologers);
 
-router.put(
-    "/update/:id",
-    authMiddleware,
-    astroController.updateAstrologer
-);
+// Online/Offline Status Toggle
+router.put("/toggle-online", astroController.toggleOnlineStatus);
+router.put("/toggle-online/:id", astroController.toggleOnlineStatus);
 
-router.delete(
-    "/delete/:id",
-    authMiddleware,
-    astroController.deleteAstrologer
-);
+// Details by ID
+router.get("/:id", astroController.getAstrologerById);
+
+// Update & Delete
+router.put("/update/:id", authMiddleware, astroController.updateAstrologer);
+router.delete("/delete/:id", authMiddleware, astroController.deleteAstrologer);
 
 module.exports = router;

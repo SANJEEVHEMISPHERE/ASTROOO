@@ -7,16 +7,41 @@ const createAstrologer = async (data) => {
         .populate("astrologerLogin");
 };
 
-const getAllAstrologers = async () => {
-    return await Astrologer.find()
+const getAllAstrologers = async (filter = {}) => {
+    return await Astrologer.find(filter)
         .populate("user")
         .populate("astrologerLogin");
+};
+
+const getOnlineAstrologers = async () => {
+    return await Astrologer.find({
+        $or: [
+            { isOnline: true },
+            { isAvailable: true }
+        ]
+    })
+    .populate("user")
+    .populate("astrologerLogin");
 };
 
 const getAstrologerById = async (id) => {
     return await Astrologer.findById(id)
         .populate("user")
         .populate("astrologerLogin");
+};
+
+const toggleOnlineStatus = async (id, isOnline, isAvailable) => {
+    const updateData = {};
+    if (isOnline !== undefined) updateData.isOnline = Boolean(isOnline);
+    if (isAvailable !== undefined) updateData.isAvailable = Boolean(isAvailable);
+
+    return await Astrologer.findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true }
+    )
+    .populate("user")
+    .populate("astrologerLogin");
 };
 
 const updateAstrologer = async (id, data) => {
@@ -37,7 +62,9 @@ const deleteAstrologer = async (id) => {
 module.exports = {
     createAstrologer,
     getAllAstrologers,
+    getOnlineAstrologers,
     getAstrologerById,
+    toggleOnlineStatus,
     updateAstrologer,
     deleteAstrologer
 };
