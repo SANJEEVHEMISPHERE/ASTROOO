@@ -10,9 +10,6 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Routes
-app.use("/api", routes);
-
 // Health Check
 app.get("/", (req, res) => {
     res.json({
@@ -21,17 +18,14 @@ app.get("/", (req, res) => {
     });
 });
 
-const astroRoutes = require("./routes/astro.route");
-app.use("/api/astro", astroRoutes);
-
-const astrologerLoginRoute = require("./routes/astrologerLogin.route");
-app.use("/api/astrologer", astrologerLoginRoute);
+// All API Routes
+app.use("/api", routes);
 
 // 404 Handler for unmatched routes
 app.use((req, res, next) => {
     res.status(404).json({
         success: false,
-        message: `Route Not Found - ${req.method} ${req.originalUrl}. Make sure you are using POST method for OTP APIs.`
+        message: `Route Not Found - ${req.method} ${req.originalUrl}.`
     });
 });
 
