@@ -14,7 +14,7 @@ const getTransporter = async () => {
     if (!isEmailConfigured()) return null;
 
     let targetHost = process.env.SMTP_HOST || "smtp.gmail.com";
-    const port = parseInt(process.env.SMTP_PORT || "465");
+    const port = parseInt(process.env.SMTP_PORT || "587");
     const isSecure = port === 465;
 
     // Dynamically resolve IPv4 IP address for host to bypass IPv6 ENETUNREACH on cloud platforms
@@ -31,6 +31,7 @@ const getTransporter = async () => {
         host: targetHost,
         port: port,
         secure: isSecure,
+        requireTLS: !isSecure,
         connectionTimeout: 10000,
         greetingTimeout: 10000,
         socketTimeout: 15000,
