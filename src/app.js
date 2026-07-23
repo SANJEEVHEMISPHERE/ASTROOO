@@ -21,6 +21,20 @@ app.get("/", (req, res) => {
     });
 });
 
+const astroRoutes = require("./routes/astro.route");
+app.use("/api/astro", astroRoutes);
+
+const astrologerLoginRoute = require("./routes/astrologerLogin.route");
+app.use("/api/astrologer", astrologerLoginRoute);
+
+// 404 Handler for unmatched routes
+app.use((req, res, next) => {
+    res.status(404).json({
+        success: false,
+        message: `Route Not Found - ${req.method} ${req.originalUrl}. Make sure you are using POST method for OTP APIs.`
+    });
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
     console.error(err);
@@ -30,11 +44,5 @@ app.use((err, req, res, next) => {
         message: err.message || "Internal Server Error"
     });
 });
-
-const astroRoutes = require("./routes/astro.route");
-app.use("/api/astro", astroRoutes);
-
-const astrologerLoginRoute = require("./routes/astrologerLogin.route");
-app.use("/api/astrologer", astrologerLoginRoute);
 
 module.exports = app;
