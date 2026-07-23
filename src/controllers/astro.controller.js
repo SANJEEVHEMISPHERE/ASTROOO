@@ -106,7 +106,7 @@ const createAstrologer = async (req, res, next) => {
 
         return res.status(201).json({
             success: true,
-            message: "Astrologer Profile Saved Successfully",
+            message: "Astrologer Profile Saved Successfully (Pending Admin Approval)",
             data: astrologer
         });
 
@@ -118,6 +118,9 @@ const createAstrologer = async (req, res, next) => {
 const getAllAstrologers = async (req, res, next) => {
     try {
         const filter = {};
+        if (req.query.status) {
+            filter.status = req.query.status;
+        }
         if (req.query.online === "true" || req.query.isOnline === "true") {
             filter.isOnline = true;
         }
@@ -126,6 +129,21 @@ const getAllAstrologers = async (req, res, next) => {
         }
 
         const astrologers = await astroService.getAllAstrologers(filter);
+
+        return res.status(200).json({
+            success: true,
+            count: astrologers.length,
+            data: astrologers
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getPendingAstrologers = async (req, res, next) => {
+    try {
+        const astrologers = await astroService.getPendingAstrologers();
 
         return res.status(200).json({
             success: true,
@@ -159,6 +177,52 @@ const getAstrologerById = async (req, res, next) => {
 
         return res.status(200).json({
             success: true,
+            data: astrologer
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const approveAstrologer = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const astrologer = await astroService.approveAstrologer(id);
+
+        if (!astrologer) {
+            return res.status(404).json({
+                success: false,
+                message: "Astrologer not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Astrologer registration request APPROVED successfully",
+            data: astrologer
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const rejectAstrologer = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const astrologer = await astroService.rejectAstrologer(id);
+
+        if (!astrologer) {
+            return res.status(404).json({
+                success: false,
+                message: "Astrologer not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Astrologer registration request REJECTED",
             data: astrologer
         });
 
@@ -246,8 +310,11 @@ const deleteAstrologer = async (req, res, next) => {
 module.exports = {
     createAstrologer,
     getAllAstrologers,
+    getPendingAstrologers,
     getOnlineAstrologers,
     getAstrologerById,
+    approveAstrologer,
+    rejectAstrologer,
     toggleOnlineStatus,
     updateAstrologer,
     deleteAstrologer

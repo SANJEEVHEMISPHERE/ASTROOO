@@ -123,6 +123,21 @@ exports.loginAstrologer = async (req, res) => {
             });
         }
 
+        // Check Admin Approval Status
+        if (astrologer.status === "pending") {
+            return res.status(403).json({
+                success: false,
+                message: "Your account is pending admin approval. Please wait for admin approval."
+            });
+        }
+
+        if (astrologer.status === "rejected") {
+            return res.status(403).json({
+                success: false,
+                message: "Your registration request has been rejected by Admin."
+            });
+        }
+
         // Save login timestamp & audit record in AstrologerLogin
         try {
             const loginRecord = await AstrologerLogin.create({

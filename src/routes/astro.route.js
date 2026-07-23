@@ -12,6 +12,11 @@ router.post("/create", astroController.createAstrologer);
 router.get("/all", astroController.getAllAstrologers);
 router.get("/online", astroController.getOnlineAstrologers);
 
+// Admin Approval & Pending Requests
+router.get("/pending", astroController.getPendingAstrologers);
+router.put("/approve/:id", astroController.approveAstrologer);
+router.put("/reject/:id", astroController.rejectAstrologer);
+
 // Online/Offline Status Toggle
 router.put("/toggle-online", astroController.toggleOnlineStatus);
 router.put("/toggle-online/:id", astroController.toggleOnlineStatus);

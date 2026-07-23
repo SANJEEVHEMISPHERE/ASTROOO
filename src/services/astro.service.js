@@ -8,13 +8,28 @@ const createAstrologer = async (data) => {
 };
 
 const getAllAstrologers = async (filter = {}) => {
-    return await Astrologer.find(filter)
+    // Default to status: "approved" for public listing unless custom status filter is requested
+    const query = { ...filter };
+    if (!query.status && query.status !== "all") {
+        query.status = "approved";
+    } else if (query.status === "all") {
+        delete query.status;
+    }
+
+    return await Astrologer.find(query)
+        .populate("user")
+        .populate("astrologerLogin");
+};
+
+const getPendingAstrologers = async () => {
+    return await Astrologer.find({ status: "pending" })
         .populate("user")
         .populate("astrologerLogin");
 };
 
 const getOnlineAstrologers = async () => {
     return await Astrologer.find({
+        status: "approved",
         $or: [
             { isOnline: true },
             { isAvailable: true }
@@ -28,6 +43,37 @@ const getAstrologerById = async (id) => {
     return await Astrologer.findById(id)
         .populate("user")
         .populate("astrologerLogin");
+};
+
+const approveAstrologer = async (id) => {
+    return await Astrologer.findByIdAndUpdate(
+        id,
+        {
+            $set: {
+                status: "approved",
+                isVerified: true
+            }
+        },
+        { new: true }
+    )
+    .populate("user")
+    .populate("astrologerLogin");
+};
+
+const rejectAstrologer = async (id) => {
+    return await Astrologer.findByIdAndUpdate(
+        id,
+        {
+            $set: {
+                status: "rejected",
+                isOnline: false,
+                isAvailable: false
+            }
+        },
+        { new: true }
+    )
+    .populate("user")
+    .populate("astrologerLogin");
 };
 
 const toggleOnlineStatus = async (id, isOnline, isAvailable) => {
@@ -62,8 +108,11 @@ const deleteAstrologer = async (id) => {
 module.exports = {
     createAstrologer,
     getAllAstrologers,
+    getPendingAstrologers,
     getOnlineAstrologers,
     getAstrologerById,
+    approveAstrologer,
+    rejectAstrologer,
     toggleOnlineStatus,
     updateAstrologer,
     deleteAstrologer
