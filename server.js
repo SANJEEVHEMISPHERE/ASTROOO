@@ -7,11 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
     try {
-
-        await connectDB();
-
         app.listen(PORT, () => {
             console.log(`🚀 Server Running on Port ${PORT}`);
+        });
+
+        connectDB().catch(err => {
+            console.error("MongoDB connection warning:", err.message);
         });
 
     } catch (error) {
@@ -20,4 +21,4 @@ const startServer = async () => {
     }
 };
 
-startServer();
+startServer();

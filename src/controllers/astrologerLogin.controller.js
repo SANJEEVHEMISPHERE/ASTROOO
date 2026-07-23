@@ -185,8 +185,8 @@ exports.forgotPasswordSendOtp = async (req, res) => {
             });
         }
 
-        const targetEmail = astrologer.email || (isEmailInput ? identifier : null);
-        const targetPhone = astrologer.phone || (!isEmailInput ? identifier : null);
+        const targetEmail = isEmailInput ? identifier.toLowerCase() : (astrologer ? astrologer.email : null);
+        const targetPhone = !isEmailInput ? identifier : (astrologer ? astrologer.phone : null);
         const customOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
         // Save OTP in DB for phone if available
