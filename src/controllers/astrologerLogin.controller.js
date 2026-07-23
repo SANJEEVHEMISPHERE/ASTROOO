@@ -219,6 +219,7 @@ exports.forgotPasswordSendOtp = async (req, res) => {
                 emailResult = await emailService.sendOtpEmail(targetEmail, customOtp);
             } catch (err) {
                 console.warn("Email send error:", err.message);
+                emailResult = { success: false, error: err.message };
             }
         }
 
@@ -226,11 +227,11 @@ exports.forgotPasswordSendOtp = async (req, res) => {
             success: true,
             message: "OTP sent successfully to registered email/phone",
             data: {
-                email: targetEmail,
-                phone: targetPhone,
+                targetEmail,
+                targetPhone,
                 otp: customOtp,
-                sms: smsResult,
-                email: emailResult
+                smsStatus: smsResult,
+                emailStatus: emailResult
             }
         });
 
