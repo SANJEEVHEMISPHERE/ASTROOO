@@ -15,15 +15,25 @@ const isEmailConfigured = () => {
 const getTransporter = () => {
     if (!isEmailConfigured()) return null;
 
+    const host = process.env.SMTP_HOST || "smtp.gmail.com";
+
+    // Use Nodemailer's native 'gmail' service preset if using Gmail
+    if (host.includes("gmail")) {
+        return nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            }
+        });
+    }
+
     return nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        host: host,
         port: parseInt(process.env.SMTP_PORT || "587"),
         secure: process.env.SMTP_PORT === "465",
         lookup: ipv4Lookup,
         family: 4,
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
