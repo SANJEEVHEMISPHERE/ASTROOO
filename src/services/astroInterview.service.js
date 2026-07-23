@@ -1,5 +1,8 @@
 const AstroInterview = require("../models/astroInterview.model");
 const Astrologer = require("../models/astro.model");
+const mongoose = require("mongoose");
+
+const isValidObjectId = (id) => typeof id === "string" && mongoose.Types.ObjectId.isValid(id) && id.length === 24;
 
 /**
  * Astrologer Requests an Interview
@@ -7,9 +10,9 @@ const Astrologer = require("../models/astro.model");
 const requestInterview = async (astrologerIdOrEmail, requestNotes = "") => {
     let astrologer = null;
 
-    if (astrologerIdOrEmail && astrologerIdOrEmail.includes("@")) {
+    if (astrologerIdOrEmail && typeof astrologerIdOrEmail === "string" && astrologerIdOrEmail.includes("@")) {
         astrologer = await Astrologer.findOne({ email: astrologerIdOrEmail.toLowerCase() });
-    } else if (astrologerIdOrEmail) {
+    } else if (astrologerIdOrEmail && isValidObjectId(astrologerIdOrEmail)) {
         astrologer = await Astrologer.findById(astrologerIdOrEmail);
     }
 
@@ -49,7 +52,7 @@ const scheduleInterview = async (identifier, interviewDate, meetingLink, intervi
     let interview = null;
 
     // Try finding by interview ID
-    if (identifier) {
+    if (identifier && isValidObjectId(identifier)) {
         try {
             interview = await AstroInterview.findById(identifier);
         } catch (e) {}
@@ -57,20 +60,24 @@ const scheduleInterview = async (identifier, interviewDate, meetingLink, intervi
 
     // Try finding by astrologer ID or Email
     if (!interview && identifier) {
-        let astrologerId = identifier;
-        if (identifier.includes("@")) {
+        let astrologerId = null;
+        if (typeof identifier === "string" && identifier.includes("@")) {
             const astro = await Astrologer.findOne({ email: identifier.toLowerCase() });
             if (astro) astrologerId = astro._id;
+        } else if (isValidObjectId(identifier)) {
+            astrologerId = identifier;
         }
 
-        interview = await AstroInterview.findOne({ astrologer: astrologerId });
+        if (astrologerId) {
+            interview = await AstroInterview.findOne({ astrologer: astrologerId });
 
-        // If no interview record exists yet, create one
-        if (!interview && astrologerId) {
-            interview = await AstroInterview.create({
-                astrologer: astrologerId,
-                status: "requested"
-            });
+            // If no interview record exists yet, create one
+            if (!interview) {
+                interview = await AstroInterview.create({
+                    astrologer: astrologerId,
+                    status: "requested"
+                });
+            }
         }
     }
 
@@ -110,23 +117,28 @@ const evaluateInterview = async (identifier, result, interviewerNotes = "") => {
     const isPass = evalResult === "pass" || evalResult === "passed";
 
     let interview = null;
-    if (identifier) {
+    if (identifier && isValidObjectId(identifier)) {
         try {
             interview = await AstroInterview.findById(identifier);
         } catch (e) {}
     }
 
     if (!interview && identifier) {
-        let astrologerId = identifier;
-        if (identifier.includes("@")) {
+        let astrologerId = null;
+        if (typeof identifier === "string" && identifier.includes("@")) {
             const astro = await Astrologer.findOne({ email: identifier.toLowerCase() });
             if (astro) astrologerId = astro._id;
+        } else if (isValidObjectId(identifier)) {
+            astrologerId = identifier;
         }
-        interview = await AstroInterview.findOne({ astrologer: astrologerId });
+
+        if (astrologerId) {
+            interview = await AstroInterview.findOne({ astrologer: astrologerId });
+        }
     }
 
     if (!interview) {
-        interview = await AstroInterview.findOne({ status: "scheduled" }).sort({ updatedAt: -1 });
+        interview = await AstroInterview.findOne().sort({ updatedAt: -1 });
     }
 
     if (!interview) {
