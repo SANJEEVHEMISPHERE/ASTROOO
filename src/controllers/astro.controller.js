@@ -1,6 +1,7 @@
 const AstrologerLogin = require("../models/astrologerLogin.model");
 const Astrologer = require("../models/astro.model");
 const astroService = require("../services/astro.service");
+const cloudinaryService = require("../services/cloudinary.service");
 
 const normalizeAstroData = async (req) => {
     const body = req.body || {};
@@ -37,8 +38,23 @@ const normalizeAstroData = async (req) => {
     if (name) payload.name = name;
     if (email) payload.email = email;
 
-    const profileImage = body.profilePhoto || body.profileImage;
-    if (profileImage) payload.profileImage = profileImage;
+    const rawProfileImage = body.profilePhoto || body.profileImage;
+    if (rawProfileImage) {
+        try {
+            payload.profileImage = await cloudinaryService.uploadBase64OrUrl(rawProfileImage, "astro_profiles");
+        } catch (e) {
+            payload.profileImage = rawProfileImage;
+        }
+    }
+
+    const rawCertificate = body.certificateFile;
+    if (rawCertificate) {
+        try {
+            payload.certificateFile = await cloudinaryService.uploadBase64OrUrl(rawCertificate, "astro_certificates");
+        } catch (e) {
+            payload.certificateFile = rawCertificate;
+        }
+    }
 
     const introduction = body.introduction || body.about;
     if (introduction) {
@@ -52,7 +68,6 @@ const normalizeAstroData = async (req) => {
     if (body.toolsTechniques !== undefined && body.toolsTechniques !== null) payload.toolsTechniques = body.toolsTechniques;
     if (body.achievements !== undefined && body.achievements !== null) payload.achievements = body.achievements;
     if (body.certificateName !== undefined && body.certificateName !== null) payload.certificateName = body.certificateName;
-    if (body.certificateFile !== undefined && body.certificateFile !== null) payload.certificateFile = body.certificateFile;
     if (body.consultationFee !== undefined && body.consultationFee !== null) payload.consultationFee = body.consultationFee;
 
     if (body.isOnline !== undefined && body.isOnline !== null) payload.isOnline = Boolean(body.isOnline);
