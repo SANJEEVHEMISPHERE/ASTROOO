@@ -187,7 +187,21 @@ const getAstrologerById = async (req, res, next) => {
 
 const approveAstrologer = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        let id = req.params.id || req.body.id || req.body.astrologerId;
+        const email = req.body.email;
+
+        if (!id && email) {
+            const astro = await Astrologer.findOne({ email: email.toLowerCase() });
+            if (astro) id = astro._id;
+        }
+
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                message: "Astrologer ID or Email is required"
+            });
+        }
+
         const astrologer = await astroService.approveAstrologer(id);
 
         if (!astrologer) {
@@ -210,7 +224,21 @@ const approveAstrologer = async (req, res, next) => {
 
 const rejectAstrologer = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        let id = req.params.id || req.body.id || req.body.astrologerId;
+        const email = req.body.email;
+
+        if (!id && email) {
+            const astro = await Astrologer.findOne({ email: email.toLowerCase() });
+            if (astro) id = astro._id;
+        }
+
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                message: "Astrologer ID or Email is required"
+            });
+        }
+
         const astrologer = await astroService.rejectAstrologer(id);
 
         if (!astrologer) {

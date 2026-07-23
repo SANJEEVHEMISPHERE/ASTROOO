@@ -12,10 +12,14 @@ router.post("/create", astroController.createAstrologer);
 router.get("/all", astroController.getAllAstrologers);
 router.get("/online", astroController.getOnlineAstrologers);
 
-// Admin Approval & Pending Requests
+// Admin Approval & Pending Requests (Supports both URL param :id and Body JSON { "astrologerId": "..." } / { "email": "..." })
 router.get("/pending", astroController.getPendingAstrologers);
 router.put("/approve/:id", astroController.approveAstrologer);
+router.post("/approve", astroController.approveAstrologer);
+router.put("/approve", astroController.approveAstrologer);
 router.put("/reject/:id", astroController.rejectAstrologer);
+router.post("/reject", astroController.rejectAstrologer);
+router.put("/reject", astroController.rejectAstrologer);
 
 // Online/Offline Status Toggle
 router.put("/toggle-online", astroController.toggleOnlineStatus);
