@@ -58,7 +58,6 @@ const UserSchema = new mongoose.Schema(
 
     email: {
       type: String,
-      default: null,
       unique: true,
       lowercase: true,
       trim: true,
@@ -67,7 +66,6 @@ const UserSchema = new mongoose.Schema(
 
     tuloId: {
       type: String,
-      default: null,
       unique: true,
       sparse: true,
     },

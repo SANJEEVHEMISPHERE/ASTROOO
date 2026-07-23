@@ -5,25 +5,30 @@ const connectDB = async () => {
         await mongoose.connect(process.env.MONGO_URI);
         console.log("MongoDB Connected");
 
-        // Clean up legacy firebaseUid_1 index from users collection
+        // Clean up legacy non-sparse email_1 and tuloId_1 indexes from users collection
         try {
             const usersCol = mongoose.connection.collection("users");
             const userIndexes = await usersCol.indexes();
-            if (userIndexes.some(idx => idx.name === "firebaseUid_1")) {
-                await usersCol.dropIndex("firebaseUid_1");
-                console.log("Successfully dropped legacy firebaseUid_1 index");
-            }
-        } catch (err) {}
 
-        // Clean up legacy unique user_1 index from astrologers collection
-        try {
-            const astroCol = mongoose.connection.collection("astrologers");
-            const astroIndexes = await astroCol.indexes();
-            if (astroIndexes.some(idx => idx.name === "user_1")) {
-                await astroCol.dropIndex("user_1");
-                console.log("Successfully dropped legacy user_1 index from astrologers");
+            const emailIdx = userIndexes.find(idx => idx.name === "email_1");
+            if (emailIdx && !emailIdx.sparse) {
+                await usersCol.dropIndex("email_1");
+                console.log("Successfully dropped legacy non-sparse email_1 index");
             }
-        } catch (err) {}
+
+            const tuloIdx = userIndexes.find(idx => idx.name === "tuloId_1");
+            if (tuloIdx && !tuloIdx.sparse) {
+                await usersCol.dropIndex("tuloId_1");
+                console.log("Successfully dropped legacy non-sparse tuloId_1 index");
+            }
+
+            // Sync User indexes
+            const User = require("../models/user.model");
+            await User.syncIndexes();
+            console.log("User model indexes synced successfully");
+        } catch (err) {
+            console.warn("Index sync warning:", err.message);
+        }
 
     } catch (error) {
         console.log(error);
