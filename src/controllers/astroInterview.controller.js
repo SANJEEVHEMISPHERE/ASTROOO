@@ -100,6 +100,50 @@ const evaluateInterview = async (req, res, next) => {
     }
 };
 
+// 3a. PASS INTERVIEW BUTTON HANDLER
+const passInterview = async (req, res, next) => {
+    try {
+        const identifier = req.params.id || req.body.interviewId || req.body.astrologerId || req.body.email || req.body.id;
+        const notes = req.body.interviewerNotes || req.body.notes || "";
+
+        const result = await astroInterviewService.evaluateInterview(identifier, "pass", notes);
+
+        return res.status(200).json({
+            success: true,
+            message: "Interview marked as PASSED. Astrologer status automatically updated to APPROVED.",
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 3b. FAIL INTERVIEW BUTTON HANDLER
+const failInterview = async (req, res, next) => {
+    try {
+        const identifier = req.params.id || req.body.interviewId || req.body.astrologerId || req.body.email || req.body.id;
+        const notes = req.body.interviewerNotes || req.body.notes || "";
+
+        const result = await astroInterviewService.evaluateInterview(identifier, "fail", notes);
+
+        return res.status(200).json({
+            success: true,
+            message: "Interview marked as FAILED. Astrologer status automatically updated to REJECTED.",
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 // 4. GET ALL INTERVIEWS (Admin)
 const getAllInterviews = async (req, res, next) => {
     try {
@@ -178,6 +222,8 @@ module.exports = {
     requestInterview,
     scheduleInterview,
     evaluateInterview,
+    passInterview,
+    failInterview,
     getAllInterviews,
     getPendingInterviews,
     getMyInterview

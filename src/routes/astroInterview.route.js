@@ -18,6 +18,16 @@ router.put("/result/:id", astroInterviewController.evaluateInterview);
 router.put("/result", astroInterviewController.evaluateInterview);
 router.post("/result", astroInterviewController.evaluateInterview);
 
+// 3a. Direct Dedicated PASS Button APIs
+router.put("/pass/:id", astroInterviewController.passInterview);
+router.put("/pass", astroInterviewController.passInterview);
+router.post("/pass", astroInterviewController.passInterview);
+
+// 3b. Direct Dedicated FAIL Button APIs
+router.put("/fail/:id", astroInterviewController.failInterview);
+router.put("/fail", astroInterviewController.failInterview);
+router.post("/fail", astroInterviewController.failInterview);
+
 // 4. Listing & Filtering
 router.get("/all", astroInterviewController.getAllInterviews);
 router.get("/pending", astroInterviewController.getPendingInterviews);
