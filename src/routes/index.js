@@ -9,6 +9,7 @@ const astrologerLoginRoute = require("./astrologerLogin.route");
 const appointmentRoutes = require("./appointment.route");
 const paymentRoutes = require("./payment.route");
 const videoSessionRoutes = require("./videoSession.route");
+const uploadRoutes = require("./upload.route");
 
 router.use("/auth", authRoutes);
 router.use("/user", userRoutes);
@@ -17,5 +18,6 @@ router.use("/astrologer", astrologerLoginRoute);
 router.use("/appointment", appointmentRoutes);
 router.use("/payment", paymentRoutes);
 router.use("/video-session", videoSessionRoutes);
+router.use("/upload", uploadRoutes);
 
 module.exports = router;
