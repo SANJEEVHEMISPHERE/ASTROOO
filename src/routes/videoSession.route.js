@@ -5,31 +5,24 @@ const router = express.Router();
 const videoSessionController = require("../controllers/videoSession.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
 
-router.post(
-    "/create",
-    videoSessionController.createVideoSession
-);
+// Agora Token Generation
+router.post("/generate-token", videoSessionController.generateAgoraToken);
 
-router.get(
-    "/all",
-    videoSessionController.getAllVideoSessions
-);
+// Create Session & Tokens
+router.post("/create", videoSessionController.createVideoSession);
 
-router.get(
-    "/:id",
-    videoSessionController.getVideoSessionById
-);
+// Session Lifecycle (Start & End)
+router.post("/start", videoSessionController.startVideoSession);
+router.post("/start/:id", videoSessionController.startVideoSession);
+router.post("/end", videoSessionController.endVideoSession);
+router.post("/end/:id", videoSessionController.endVideoSession);
 
-router.put(
-    "/update/:id",
-    authMiddleware,
-    videoSessionController.updateVideoSession
-);
+// Listing & Details
+router.get("/all", videoSessionController.getAllVideoSessions);
+router.get("/:id", videoSessionController.getVideoSessionById);
 
-router.delete(
-    "/delete/:id",
-    authMiddleware,
-    videoSessionController.deleteVideoSession
-);
+// Update & Delete
+router.put("/update/:id", authMiddleware, videoSessionController.updateVideoSession);
+router.delete("/delete/:id", authMiddleware, videoSessionController.deleteVideoSession);
 
 module.exports = router;

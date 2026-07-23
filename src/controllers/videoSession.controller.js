@@ -1,29 +1,111 @@
 const videoSessionService = require("../services/videoSession.service");
 
-const createVideoSession = async (req, res) => {
+// 1. GENERATE AGORA RTC TOKEN
+const generateAgoraToken = async (req, res) => {
     try {
+        const { channelName, uid, role } = req.body;
 
-        const session = await videoSessionService.createVideoSession(req.body);
+        if (!channelName) {
+            return res.status(400).json({
+                success: false,
+                message: "channelName is required"
+            });
+        }
 
-        return res.status(201).json({
+        const tokenData = videoSessionService.generateAgoraToken(channelName, uid, role);
+
+        return res.status(200).json({
             success: true,
-            message: "Video Session Created Successfully",
-            data: session
+            message: "Agora RTC Token generated successfully",
+            data: tokenData
         });
 
     } catch (error) {
-
         return res.status(400).json({
             success: false,
             message: error.message
         });
-
     }
 };
 
+// 2. CREATE VIDEO SESSION
+const createVideoSession = async (req, res) => {
+    try {
+        const result = await videoSessionService.createVideoSession(req.body);
+
+        return res.status(201).json({
+            success: true,
+            message: "Video Session Created Successfully",
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 3. START VIDEO SESSION
+const startVideoSession = async (req, res) => {
+    try {
+        const sessionId = req.params.id || req.body.sessionId;
+
+        if (!sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: "Session ID is required"
+            });
+        }
+
+        const result = await videoSessionService.startVideoSession(sessionId);
+
+        return res.status(200).json({
+            success: true,
+            message: "Video Session started (Status: live)",
+            data: result
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 4. END VIDEO SESSION
+const endVideoSession = async (req, res) => {
+    try {
+        const sessionId = req.params.id || req.body.sessionId;
+
+        if (!sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: "Session ID is required"
+            });
+        }
+
+        const session = await videoSessionService.endVideoSession(sessionId);
+
+        return res.status(200).json({
+            success: true,
+            message: "Video Session ended (Status: completed)",
+            data: session
+        });
+
+    } catch (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// 5. GET ALL SESSIONS
 const getAllVideoSessions = async (req, res) => {
     try {
-
         const sessions = await videoSessionService.getAllVideoSessions();
 
         return res.status(200).json({
@@ -33,18 +115,16 @@ const getAllVideoSessions = async (req, res) => {
         });
 
     } catch (error) {
-
         return res.status(500).json({
             success: false,
             message: error.message
         });
-
     }
 };
 
+// 6. GET SESSION BY ID
 const getVideoSessionById = async (req, res) => {
     try {
-
         const session = await videoSessionService.getVideoSessionById(req.params.id);
 
         if (!session) {
@@ -60,18 +140,16 @@ const getVideoSessionById = async (req, res) => {
         });
 
     } catch (error) {
-
         return res.status(500).json({
             success: false,
             message: error.message
         });
-
     }
 };
 
+// 7. UPDATE SESSION
 const updateVideoSession = async (req, res) => {
     try {
-
         const session = await videoSessionService.updateVideoSession(
             req.params.id,
             req.body
@@ -91,18 +169,16 @@ const updateVideoSession = async (req, res) => {
         });
 
     } catch (error) {
-
         return res.status(500).json({
             success: false,
             message: error.message
         });
-
     }
 };
 
+// 8. DELETE SESSION
 const deleteVideoSession = async (req, res) => {
     try {
-
         const session = await videoSessionService.deleteVideoSession(req.params.id);
 
         if (!session) {
@@ -118,17 +194,18 @@ const deleteVideoSession = async (req, res) => {
         });
 
     } catch (error) {
-
         return res.status(500).json({
             success: false,
             message: error.message
         });
-
     }
 };
 
 module.exports = {
+    generateAgoraToken,
     createVideoSession,
+    startVideoSession,
+    endVideoSession,
     getAllVideoSessions,
     getVideoSessionById,
     updateVideoSession,
