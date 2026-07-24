@@ -165,7 +165,7 @@ const initSocket = (server) => {
             }
         });
 
-        // 3. Real-Time Instant Messaging
+        // 3. Real-Time Instant Messaging (User <-> Astrologer)
         socket.on("send_message", async (data) => {
             try {
                 const sessionId = extractSessionId(data);
@@ -181,15 +181,21 @@ const initSocket = (server) => {
                 }
 
                 const session = await ChatSession.findById(sessionId);
-                if (!session || session.status !== "ACTIVE") {
-                    socket.emit("error", { message: "Cannot send message. Session is not ACTIVE." });
+                if (!session) {
+                    socket.emit("error", { message: "Chat session not found." });
+                    return;
+                }
+
+                // Allow messages if status is ACTIVE or PENDING
+                if (session.status !== "ACTIVE" && session.status !== "PENDING") {
+                    socket.emit("error", { message: `Cannot send message. Session status is ${session.status}` });
                     return;
                 }
 
                 const newMessage = await ChatMessage.create({
                     session: sessionId,
                     senderId,
-                    senderType,
+                    senderType: senderType || "user",
                     messageType,
                     text,
                     mediaUrl
@@ -202,7 +208,18 @@ const initSocket = (server) => {
                     id: newMessage._id
                 };
 
+                // Broadcast to session room AND directly to user rooms of both user & astrologer!
                 io.to(`session_${sessionId}`).emit("receive_message", formattedMsg);
+                if (session.user) io.to(`user_${session.user}`).emit("receive_message", formattedMsg);
+                if (session.astrologer) {
+                    io.to(`user_${session.astrologer}`).emit("receive_message", formattedMsg);
+                    const astro = await Astrologer.findById(session.astrologer);
+                    if (astro) {
+                        if (astro.user) io.to(`user_${astro.user}`).emit("receive_message", formattedMsg);
+                        if (astro.astrologerLogin) io.to(`user_${astro.astrologerLogin}`).emit("receive_message", formattedMsg);
+                    }
+                }
+
             } catch (error) {
                 console.error("Socket send_message error:", error);
                 socket.emit("error", { message: "Failed to send message" });
@@ -367,10 +384,13 @@ const initSocket = (server) => {
                     channelName: session.channelName
                 };
 
-                io.to(`user_${astrologerId}`).emit("incoming_call_request", payload);
-                if (session.astrologer && session.astrologer.user) {
-                    io.to(`user_${session.astrologer.user}`).emit("incoming_call_request", payload);
+                const astroObj = await findAstrologerByIdOrRef(astrologerId);
+                if (astroObj) {
+                    io.to(`user_${astroObj._id}`).emit("incoming_call_request", payload);
+                    if (astroObj.user) io.to(`user_${astroObj.user}`).emit("incoming_call_request", payload);
+                    if (astroObj.astrologerLogin) io.to(`user_${astroObj.astrologerLogin}`).emit("incoming_call_request", payload);
                 }
+                io.to(`call_${session._id}`).emit("incoming_call_request", payload);
 
                 socket.emit("call_request_sent", {
                     success: true,
@@ -406,6 +426,7 @@ const initSocket = (server) => {
                 };
 
                 io.to(`call_${sessionId}`).emit("call_accepted", responsePayload);
+                io.to(`user_${result.session.user}`).emit("call_accepted", responsePayload);
 
             } catch (err) {
                 console.error("accept_call_request socket error:", err);
@@ -422,12 +443,15 @@ const initSocket = (server) => {
                 const reason = data ? (data.reason || "Astrologer busy") : "Astrologer busy";
                 const session = await videoSessionService.rejectCallSession(sessionId, reason);
 
-                io.to(`call_${sessionId}`).emit("call_rejected", {
+                const responsePayload = {
                     success: false,
                     message: "Call request was rejected.",
                     reason: session.rejectionReason,
                     session
-                });
+                };
+
+                io.to(`call_${sessionId}`).emit("call_rejected", responsePayload);
+                io.to(`user_${session.user}`).emit("call_rejected", responsePayload);
 
             } catch (err) {
                 console.error("reject_call_request socket error:", err);

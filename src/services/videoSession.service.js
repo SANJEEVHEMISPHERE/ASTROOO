@@ -8,6 +8,24 @@ const generateRoomId = (prefix = "room") => {
     return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 };
 
+const findUserByIdOrRef = async (id) => {
+    if (!id) return null;
+    let user = await User.findById(id);
+    if (!user) user = await User.findOne({ userLogin: id });
+    return user;
+};
+
+const findAstrologerByIdOrRef = async (id) => {
+    if (!id) return null;
+    let astro = await Astrologer.findById(id);
+    if (!astro) {
+        astro = await Astrologer.findOne({
+            $or: [{ user: id }, { astrologerLogin: id }]
+        });
+    }
+    return astro;
+};
+
 /**
  * Generate standalone Agora RTC Token
  */
@@ -19,33 +37,44 @@ const generateAgoraToken = (channelName, uid = 0, role = "publisher") => {
  * Initiate an Audio or Video Call Request (User -> Astrologer)
  */
 const requestCallSession = async ({ userId, astrologerId, callType = "VIDEO" }) => {
-    const user = await User.findById(userId);
-    if (!user) throw new Error("User not found");
+    const user = await findUserByIdOrRef(userId);
+    if (!user) throw new Error(`User not found for ID: ${userId}`);
 
-    const astrologer = await Astrologer.findById(astrologerId);
-    if (!astrologer) throw new Error("Astrologer not found");
+    const astrologer = await findAstrologerByIdOrRef(astrologerId);
+    if (!astrologer) throw new Error(`Astrologer not found for ID: ${astrologerId}`);
 
     const perMinuteRate = astrologer.consultationFee || 0;
 
-    if (user.walletBalance < perMinuteRate) {
+    if ((user.walletBalance || 0) < perMinuteRate) {
         throw new Error(`Insufficient wallet balance. Minimum ₹${perMinuteRate} required to request call.`);
     }
 
-    const roomId = generateRoomId(callType === "AUDIO" ? "audio" : "video");
-    const channelName = roomId;
+    const typeStr = String(callType).toUpperCase();
+    const normalizedCallType = (typeStr === "AUDIO" || typeStr === "CALL" || typeStr === "VOICE" || typeStr === "PHONE") ? "AUDIO" : "VIDEO";
 
-    const newSession = await VideoSession.create({
-        user: userId,
-        astrologer: astrologerId,
-        callType: callType.toUpperCase(),
-        provider: "Agora",
-        roomId,
-        channelName,
-        perMinuteRate,
-        status: "PENDING"
+    let session = await VideoSession.findOne({
+        user: user._id,
+        astrologer: astrologer._id,
+        status: { $in: ["PENDING", "ACTIVE", "live"] }
     });
 
-    const populatedSession = await VideoSession.findById(newSession._id)
+    if (!session) {
+        const roomId = generateRoomId(normalizedCallType === "AUDIO" ? "audio" : "video");
+        const channelName = roomId;
+
+        session = await VideoSession.create({
+            user: user._id,
+            astrologer: astrologer._id,
+            callType: normalizedCallType,
+            provider: "Agora",
+            roomId,
+            channelName,
+            perMinuteRate,
+            status: "PENDING"
+        });
+    }
+
+    const populatedSession = await VideoSession.findById(session._id)
         .populate("user", "firstname lastname phone profileImage walletBalance")
         .populate("astrologer", "name profileImage consultationFee specialization");
 
@@ -56,10 +85,16 @@ const requestCallSession = async ({ userId, astrologerId, callType = "VIDEO" }) 
  * Accept Call Session & Generate Agora RTC Token (Astrologer -> User)
  */
 const acceptCallSession = async (sessionId) => {
-    const session = await VideoSession.findById(sessionId);
+    let session = await VideoSession.findById(sessionId);
+    if (!session) {
+        // Try searching by roomId or channelName
+        session = await VideoSession.findOne({
+            $or: [{ roomId: sessionId }, { channelName: sessionId }]
+        });
+    }
     if (!session) throw new Error("Call session not found");
 
-    if (session.status !== "PENDING") {
+    if (session.status !== "PENDING" && session.status !== "ACTIVE" && session.status !== "live") {
         throw new Error(`Call session is no longer pending (current status: ${session.status})`);
     }
 
@@ -67,10 +102,10 @@ const acceptCallSession = async (sessionId) => {
     const agoraData = agoraService.generateRtcToken(channelName, 0, "publisher");
 
     session.status = "ACTIVE";
-    session.startTime = new Date();
+    if (!session.startTime) session.startTime = new Date();
     await session.save();
 
-    const updatedSession = await VideoSession.findById(sessionId)
+    const updatedSession = await VideoSession.findById(session._id)
         .populate("user", "firstname lastname phone profileImage walletBalance")
         .populate("astrologer", "name profileImage consultationFee");
 
@@ -84,7 +119,12 @@ const acceptCallSession = async (sessionId) => {
  * Reject Call Session (Astrologer -> User)
  */
 const rejectCallSession = async (sessionId, reason = "Astrologer unavailable") => {
-    const session = await VideoSession.findById(sessionId);
+    let session = await VideoSession.findById(sessionId);
+    if (!session) {
+        session = await VideoSession.findOne({
+            $or: [{ roomId: sessionId }, { channelName: sessionId }]
+        });
+    }
     if (!session) throw new Error("Call session not found");
 
     session.status = "REJECTED";
@@ -99,7 +139,12 @@ const rejectCallSession = async (sessionId, reason = "Astrologer unavailable") =
  * End Active Call Session
  */
 const endCallSession = async (sessionId) => {
-    const session = await VideoSession.findById(sessionId);
+    let session = await VideoSession.findById(sessionId);
+    if (!session) {
+        session = await VideoSession.findOne({
+            $or: [{ roomId: sessionId }, { channelName: sessionId }]
+        });
+    }
     if (!session) throw new Error("Call session not found");
 
     const endTime = new Date();
@@ -130,7 +175,14 @@ const getVideoSessionById = async (id) => {
  * Get Call History for User or Astrologer
  */
 const getCallHistory = async (userId, role = "user") => {
-    const query = role === "astrologer" ? { astrologer: userId } : { user: userId };
+    const userObj = await findUserByIdOrRef(userId);
+    const astroObj = await findAstrologerByIdOrRef(userId);
+
+    const targetId = role === "astrologer" 
+        ? (astroObj ? astroObj._id : userId)
+        : (userObj ? userObj._id : userId);
+
+    const query = role === "astrologer" ? { astrologer: targetId } : { user: targetId };
     return await VideoSession.find(query)
         .sort({ createdAt: -1 })
         .populate("user", "firstname lastname phone profileImage")
