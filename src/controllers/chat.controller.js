@@ -15,6 +15,32 @@ const getSessionIdFromBodyOrParams = (req) => {
 };
 
 /**
+ * Helper to resolve User document even if UserLogin ID or User ID is passed
+ */
+const findUserByIdOrRef = async (id) => {
+    if (!id) return null;
+    let user = await User.findById(id);
+    if (!user) {
+        user = await User.findOne({ userLogin: id });
+    }
+    return user;
+};
+
+/**
+ * Helper to resolve Astrologer document even if User ID or AstrologerLogin ID is passed
+ */
+const findAstrologerByIdOrRef = async (id) => {
+    if (!id) return null;
+    let astro = await Astrologer.findById(id);
+    if (!astro) {
+        astro = await Astrologer.findOne({
+            $or: [{ user: id }, { astrologerLogin: id }]
+        });
+    }
+    return astro;
+};
+
+/**
  * 1. Initiate Chat Request (User side)
  */
 exports.initiateChat = async (req, res, next) => {
@@ -29,19 +55,19 @@ exports.initiateChat = async (req, res, next) => {
             });
         }
 
-        const user = await User.findById(currentUserId);
+        const user = await findUserByIdOrRef(currentUserId);
         if (!user) {
             return res.status(404).json({
                 success: false,
-                message: "User not found."
+                message: `User not found for ID: ${currentUserId}`
             });
         }
 
-        const astrologer = await Astrologer.findById(astrologerId);
+        const astrologer = await findAstrologerByIdOrRef(astrologerId);
         if (!astrologer) {
             return res.status(404).json({
                 success: false,
-                message: "Astrologer not found."
+                message: `Astrologer not found for ID: ${astrologerId}`
             });
         }
 
@@ -56,15 +82,15 @@ exports.initiateChat = async (req, res, next) => {
         }
 
         let session = await ChatSession.findOne({
-            user: currentUserId,
-            astrologer: astrologerId,
+            user: user._id,
+            astrologer: astrologer._id,
             status: { $in: ["PENDING", "ACTIVE"] }
         });
 
         if (!session) {
             session = await ChatSession.create({
-                user: currentUserId,
-                astrologer: astrologerId,
+                user: user._id,
+                astrologer: astrologer._id,
                 perMinuteRate,
                 status: "PENDING"
             });
@@ -78,7 +104,7 @@ exports.initiateChat = async (req, res, next) => {
             id: session._id
         };
 
-        // Broadcast to astrologer socket personal room (user_<astrologerId>) & session room
+        // Broadcast to astrologer socket personal rooms & session room
         try {
             const { getIO } = require("../config/socket");
             const io = getIO();
@@ -89,7 +115,11 @@ exports.initiateChat = async (req, res, next) => {
                     sessionId: session._id,
                     _id: session._id
                 };
-                io.to(`user_${astrologerId}`).emit("incoming_chat_request", payload);
+                
+                // Broadcast to Astrologer document ID, User ID, and AstrologerLogin ID rooms
+                io.to(`user_${astrologer._id}`).emit("incoming_chat_request", payload);
+                if (astrologer.user) io.to(`user_${astrologer.user}`).emit("incoming_chat_request", payload);
+                if (astrologer.astrologerLogin) io.to(`user_${astrologer.astrologerLogin}`).emit("incoming_chat_request", payload);
                 io.to(`session_${session._id}`).emit("incoming_chat_request", payload);
             }
         } catch (e) {
@@ -103,6 +133,7 @@ exports.initiateChat = async (req, res, next) => {
         });
 
     } catch (error) {
+        console.error("initiateChat Error:", error);
         next(error);
     }
 };
@@ -345,8 +376,14 @@ exports.getMySessions = async (req, res, next) => {
         const { userId, astrologerId, status } = req.query;
 
         let query = {};
-        if (userId) query.user = userId;
-        if (astrologerId) query.astrologer = astrologerId;
+        if (userId) {
+            const userObj = await findUserByIdOrRef(userId);
+            query.user = userObj ? userObj._id : userId;
+        }
+        if (astrologerId) {
+            const astroObj = await findAstrologerByIdOrRef(astrologerId);
+            query.astrologer = astroObj ? astroObj._id : astrologerId;
+        }
         if (status) query.status = status;
 
         const rawSessions = await ChatSession.find(query)
@@ -399,7 +436,6 @@ exports.rateChat = async (req, res, next) => {
         if (review) session.review = review;
         await session.save();
 
-        // Update Astrologer overall rating
         const astrologer = await Astrologer.findById(session.astrologer);
         if (astrologer) {
             const allRatings = await ChatSession.find({ astrologer: session.astrologer, rating: { $ne: null } });

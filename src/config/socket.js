@@ -2,6 +2,8 @@ const { Server } = require("socket.io");
 const ChatSession = require("../models/chatSession.model");
 const ChatMessage = require("../models/chatMessage.model");
 const VideoSession = require("../models/videoSession.model");
+const User = require("../models/user.model");
+const Astrologer = require("../models/astro.model");
 const { startBillingTimer, stopBillingTimer } = require("../services/chatBilling.service");
 const { startCallBillingTimer, stopCallBillingTimer } = require("../services/callBilling.service");
 const videoSessionService = require("../services/videoSession.service");
@@ -12,6 +14,24 @@ const extractSessionId = (data) => {
     if (!data) return null;
     if (typeof data === "string") return data;
     return data.sessionId || data.chatId || data.callId || data._id || data.id || (data.session && (data.session._id || data.session.id)) || null;
+};
+
+const findUserByIdOrRef = async (id) => {
+    if (!id) return null;
+    let user = await User.findById(id);
+    if (!user) user = await User.findOne({ userLogin: id });
+    return user;
+};
+
+const findAstrologerByIdOrRef = async (id) => {
+    if (!id) return null;
+    let astro = await Astrologer.findById(id);
+    if (!astro) {
+        astro = await Astrologer.findOne({
+            $or: [{ user: id }, { astrologerLogin: id }]
+        });
+    }
+    return astro;
 };
 
 const initSocket = (server) => {
@@ -39,7 +59,92 @@ const initSocket = (server) => {
         // CHAT SESSION SOCKET EVENTS
         // =====================================
 
-        // 1. Join Chat Session Room
+        // 1. Initiate Chat Request via Socket
+        const handleChatRequest = async (data) => {
+            try {
+                const userId = data ? (data.userId || data.user) : null;
+                const astrologerId = data ? (data.astrologerId || data.astrologer) : null;
+
+                if (!userId || !astrologerId) {
+                    socket.emit("error", { message: "userId and astrologerId are required." });
+                    return;
+                }
+
+                const userObj = await findUserByIdOrRef(userId);
+                if (!userObj) {
+                    socket.emit("error", { message: `User not found for ID: ${userId}` });
+                    return;
+                }
+
+                const astroObj = await findAstrologerByIdOrRef(astrologerId);
+                if (!astroObj) {
+                    socket.emit("error", { message: `Astrologer not found for ID: ${astrologerId}` });
+                    return;
+                }
+
+                const perMinuteRate = astroObj.consultationFee || 0;
+                const minBalanceRequired = perMinuteRate * 2;
+
+                if ((userObj.walletBalance || 0) < minBalanceRequired) {
+                    socket.emit("error", {
+                        message: `Insufficient wallet balance. Minimum ₹${minBalanceRequired} (2 mins) required to initiate chat. Current Balance: ₹${userObj.walletBalance || 0}`
+                    });
+                    return;
+                }
+
+                let session = await ChatSession.findOne({
+                    user: userObj._id,
+                    astrologer: astroObj._id,
+                    status: { $in: ["PENDING", "ACTIVE"] }
+                });
+
+                if (!session) {
+                    session = await ChatSession.create({
+                        user: userObj._id,
+                        astrologer: astroObj._id,
+                        perMinuteRate,
+                        status: "PENDING"
+                    });
+                }
+
+                const responseData = {
+                    ...session.toObject(),
+                    sessionId: session._id,
+                    chatId: session._id,
+                    _id: session._id,
+                    id: session._id
+                };
+
+                socket.join(`session_${session._id}`);
+
+                const payload = {
+                    message: "New incoming chat request!",
+                    session: responseData,
+                    sessionId: session._id,
+                    _id: session._id
+                };
+
+                io.to(`user_${astroObj._id}`).emit("incoming_chat_request", payload);
+                if (astroObj.user) io.to(`user_${astroObj.user}`).emit("incoming_chat_request", payload);
+                if (astroObj.astrologerLogin) io.to(`user_${astroObj.astrologerLogin}`).emit("incoming_chat_request", payload);
+                io.to(`session_${session._id}`).emit("incoming_chat_request", payload);
+
+                socket.emit("chat_request_created", {
+                    success: true,
+                    message: "Chat request initiated successfully.",
+                    session: responseData
+                });
+
+            } catch (err) {
+                console.error("handleChatRequest error:", err);
+                socket.emit("error", { message: err.message || "Failed to initiate chat request." });
+            }
+        };
+
+        socket.on("request_chat", handleChatRequest);
+        socket.on("initiate_chat", handleChatRequest);
+
+        // 2. Join Chat Session Room
         socket.on("join_session", async (data) => {
             const sessionId = extractSessionId(data);
             if (!sessionId) return;
@@ -60,7 +165,7 @@ const initSocket = (server) => {
             }
         });
 
-        // 2. Real-Time Instant Messaging
+        // 3. Real-Time Instant Messaging
         socket.on("send_message", async (data) => {
             try {
                 const sessionId = extractSessionId(data);
@@ -104,7 +209,7 @@ const initSocket = (server) => {
             }
         });
 
-        // 3. Typing Indicator Status
+        // 4. Typing Indicator Status
         socket.on("typing_status", (data) => {
             const sessionId = extractSessionId(data);
             if (!sessionId) return;
@@ -116,7 +221,7 @@ const initSocket = (server) => {
             });
         });
 
-        // 4. Astrologer Accepts Chat Request
+        // 5. Astrologer Accepts Chat Request
         socket.on("accept_chat_request", async (data) => {
             try {
                 const sessionId = extractSessionId(data);
@@ -144,12 +249,13 @@ const initSocket = (server) => {
                 };
 
                 io.to(`session_${sessionId}`).emit("chat_accepted", responsePayload);
+                io.to(`user_${session.user}`).emit("chat_accepted", responsePayload);
             } catch (err) {
                 console.error("accept_chat_request socket error:", err);
             }
         });
 
-        // 5. Astrologer Rejects Chat Request
+        // 6. Astrologer Rejects Chat Request
         socket.on("reject_chat_request", async (data) => {
             try {
                 const sessionId = extractSessionId(data);
@@ -161,21 +267,24 @@ const initSocket = (server) => {
                     session.rejectionReason = data.reason || "Astrologer unavailable";
                     await session.save();
 
-                    io.to(`session_${sessionId}`).emit("chat_rejected", {
+                    const responsePayload = {
                         success: false,
                         message: "Astrologer rejected chat request.",
                         reason: session.rejectionReason,
                         session,
                         sessionId: session._id,
                         _id: session._id
-                    });
+                    };
+
+                    io.to(`session_${sessionId}`).emit("chat_rejected", responsePayload);
+                    io.to(`user_${session.user}`).emit("chat_rejected", responsePayload);
                 }
             } catch (err) {
                 console.error("reject_chat_request socket error:", err);
             }
         });
 
-        // 6. End Chat Session Manually
+        // 7. End Chat Session Manually
         socket.on("end_chat_session", async (data) => {
             try {
                 const sessionId = extractSessionId(data);
@@ -247,20 +356,22 @@ const initSocket = (server) => {
                     callType
                 });
 
-                // Join the creator's socket to call room
                 socket.join(`call_${session._id}`);
 
-                // Notify target Astrologer in their personal room (user_<astrologerId>)
-                io.to(`user_${astrologerId}`).emit("incoming_call_request", {
+                const payload = {
                     sessionId: session._id,
                     callType: session.callType,
                     user: session.user,
                     astrologer: session.astrologer,
                     perMinuteRate: session.perMinuteRate,
                     channelName: session.channelName
-                });
+                };
 
-                // Confirm request created to User
+                io.to(`user_${astrologerId}`).emit("incoming_call_request", payload);
+                if (session.astrologer && session.astrologer.user) {
+                    io.to(`user_${session.astrologer.user}`).emit("incoming_call_request", payload);
+                }
+
                 socket.emit("call_request_sent", {
                     success: true,
                     message: "Call request sent to astrologer. Waiting for response...",
@@ -281,10 +392,8 @@ const initSocket = (server) => {
 
                 const result = await videoSessionService.acceptCallSession(sessionId);
 
-                // Join Astrologer socket to call room
                 socket.join(`call_${sessionId}`);
 
-                // Start live call billing timer
                 startCallBillingTimer(sessionId, io);
 
                 const responsePayload = {
@@ -296,7 +405,6 @@ const initSocket = (server) => {
                     session: result.session
                 };
 
-                // Broadcast `call_accepted` event to everyone in the call room
                 io.to(`call_${sessionId}`).emit("call_accepted", responsePayload);
 
             } catch (err) {
