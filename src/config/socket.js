@@ -1,14 +1,17 @@
 const { Server } = require("socket.io");
 const ChatSession = require("../models/chatSession.model");
 const ChatMessage = require("../models/chatMessage.model");
+const VideoSession = require("../models/videoSession.model");
 const { startBillingTimer, stopBillingTimer } = require("../services/chatBilling.service");
+const { startCallBillingTimer, stopCallBillingTimer } = require("../services/callBilling.service");
+const videoSessionService = require("../services/videoSession.service");
 
 let io;
 
 const extractSessionId = (data) => {
     if (!data) return null;
     if (typeof data === "string") return data;
-    return data.sessionId || data.chatId || data._id || data.id || (data.session && (data.session._id || data.session.id)) || null;
+    return data.sessionId || data.chatId || data.callId || data._id || data.id || (data.session && (data.session._id || data.session.id)) || null;
 };
 
 const initSocket = (server) => {
@@ -22,6 +25,20 @@ const initSocket = (server) => {
     io.on("connection", (socket) => {
         console.log(`🔌 New Socket Connection Established: ${socket.id}`);
 
+        // Register User or Astrologer to their personal notification room (user_<id>)
+        socket.on("register_user", (data) => {
+            const userId = data ? (data.userId || data.id || data._id) : null;
+            if (userId) {
+                const userRoom = `user_${userId}`;
+                socket.join(userRoom);
+                console.log(`👤 Socket ${socket.id} registered in personal room: ${userRoom}`);
+            }
+        });
+
+        // =====================================
+        // CHAT SESSION SOCKET EVENTS
+        // =====================================
+
         // 1. Join Chat Session Room
         socket.on("join_session", async (data) => {
             const sessionId = extractSessionId(data);
@@ -29,7 +46,7 @@ const initSocket = (server) => {
 
             const roomName = `session_${sessionId}`;
             socket.join(roomName);
-            console.log(`👤 Socket ${socket.id} joined room: ${roomName}`);
+            console.log(`👤 Socket ${socket.id} joined chat room: ${roomName}`);
 
             try {
                 const session = await ChatSession.findById(sessionId);
@@ -64,7 +81,6 @@ const initSocket = (server) => {
                     return;
                 }
 
-                // Save message to database
                 const newMessage = await ChatMessage.create({
                     session: sessionId,
                     senderId,
@@ -81,7 +97,6 @@ const initSocket = (server) => {
                     id: newMessage._id
                 };
 
-                // Broadcast to all clients in this session room
                 io.to(`session_${sessionId}`).emit("receive_message", formattedMsg);
             } catch (error) {
                 console.error("Socket send_message error:", error);
@@ -117,7 +132,6 @@ const initSocket = (server) => {
                 session.startTime = new Date();
                 await session.save();
 
-                // Start per-minute recurring timer
                 startBillingTimer(sessionId, io);
 
                 const responsePayload = {
@@ -189,6 +203,161 @@ const initSocket = (server) => {
                 console.error("end_chat_session socket error:", err);
             }
         });
+
+
+        // =====================================
+        // AUDIO & VIDEO CALL SOCKET EVENTS
+        // =====================================
+
+        // 1. Join Audio/Video Call Room
+        socket.on("join_call_room", async (data) => {
+            const sessionId = extractSessionId(data);
+            if (!sessionId) return;
+
+            const roomName = `call_${sessionId}`;
+            socket.join(roomName);
+            console.log(`📞 Socket ${socket.id} joined call room: ${roomName}`);
+
+            try {
+                const session = await VideoSession.findById(sessionId);
+                socket.emit("call_state", {
+                    session,
+                    sessionId: session ? session._id : sessionId
+                });
+            } catch (err) {
+                console.error("Error fetching call session on join:", err);
+            }
+        });
+
+        // 2. User Requests Audio or Video Call
+        socket.on("request_call", async (data) => {
+            try {
+                const userId = data ? (data.userId || data.user) : null;
+                const astrologerId = data ? (data.astrologerId || data.astrologer) : null;
+                const callType = (data && data.callType) ? data.callType : "VIDEO";
+
+                if (!userId || !astrologerId) {
+                    socket.emit("error", { message: "Invalid payload: missing userId or astrologerId." });
+                    return;
+                }
+
+                const session = await videoSessionService.requestCallSession({
+                    userId,
+                    astrologerId,
+                    callType
+                });
+
+                // Join the creator's socket to call room
+                socket.join(`call_${session._id}`);
+
+                // Notify target Astrologer in their personal room (user_<astrologerId>)
+                io.to(`user_${astrologerId}`).emit("incoming_call_request", {
+                    sessionId: session._id,
+                    callType: session.callType,
+                    user: session.user,
+                    astrologer: session.astrologer,
+                    perMinuteRate: session.perMinuteRate,
+                    channelName: session.channelName
+                });
+
+                // Confirm request created to User
+                socket.emit("call_request_sent", {
+                    success: true,
+                    message: "Call request sent to astrologer. Waiting for response...",
+                    session
+                });
+
+            } catch (error) {
+                console.error("request_call socket error:", error);
+                socket.emit("error", { message: error.message || "Failed to initiate call request." });
+            }
+        });
+
+        // 3. Astrologer Accepts Call Request
+        socket.on("accept_call_request", async (data) => {
+            try {
+                const sessionId = extractSessionId(data);
+                if (!sessionId) return;
+
+                const result = await videoSessionService.acceptCallSession(sessionId);
+
+                // Join Astrologer socket to call room
+                socket.join(`call_${sessionId}`);
+
+                // Start live call billing timer
+                startCallBillingTimer(sessionId, io);
+
+                const responsePayload = {
+                    success: true,
+                    message: "Call request accepted! Agora RTC token generated.",
+                    sessionId: result.session._id,
+                    channelName: result.session.channelName,
+                    agora: result.agora,
+                    session: result.session
+                };
+
+                // Broadcast `call_accepted` event to everyone in the call room
+                io.to(`call_${sessionId}`).emit("call_accepted", responsePayload);
+
+            } catch (err) {
+                console.error("accept_call_request socket error:", err);
+                socket.emit("error", { message: err.message || "Failed to accept call request." });
+            }
+        });
+
+        // 4. Astrologer Rejects Call Request
+        socket.on("reject_call_request", async (data) => {
+            try {
+                const sessionId = extractSessionId(data);
+                if (!sessionId) return;
+
+                const reason = data ? (data.reason || "Astrologer busy") : "Astrologer busy";
+                const session = await videoSessionService.rejectCallSession(sessionId, reason);
+
+                io.to(`call_${sessionId}`).emit("call_rejected", {
+                    success: false,
+                    message: "Call request was rejected.",
+                    reason: session.rejectionReason,
+                    session
+                });
+
+            } catch (err) {
+                console.error("reject_call_request socket error:", err);
+            }
+        });
+
+        // 5. End Audio/Video Call Session
+        socket.on("end_call_session", async (data) => {
+            try {
+                const sessionId = extractSessionId(data);
+                if (!sessionId) return;
+
+                stopCallBillingTimer(sessionId);
+                const session = await videoSessionService.endCallSession(sessionId);
+
+                io.to(`call_${sessionId}`).emit("call_ended", {
+                    success: true,
+                    message: "Call session ended successfully.",
+                    session
+                });
+
+            } catch (err) {
+                console.error("end_call_session socket error:", err);
+            }
+        });
+
+        // 6. Mute / Camera Toggle State Sync
+        socket.on("media_state_change", (data) => {
+            const sessionId = extractSessionId(data);
+            if (!sessionId) return;
+
+            socket.to(`call_${sessionId}`).emit("peer_media_state_changed", {
+                isAudioMuted: Boolean(data.isAudioMuted),
+                isVideoMuted: Boolean(data.isVideoMuted),
+                senderType: data.senderType
+            });
+        });
+
 
         // Disconnect Handler
         socket.on("disconnect", () => {

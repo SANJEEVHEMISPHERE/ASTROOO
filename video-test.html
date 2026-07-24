@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Astro App - Agora 1-on-1 Video Call Test</title>
+    <title>Astro App - Audio & Video Call Real-Time Test</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="https://download.agora.io/sdk/web/AgoraRTC_N-4.20.0.js"></script>
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -11,133 +12,204 @@
         h1 { color: #a855f7; margin-bottom: 5px; }
         p { color: #94a3b8; font-size: 14px; }
         
-        .controls { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-        input { padding: 12px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; flex: 1; min-width: 180px; }
-        button { padding: 12px 24px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .controls { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 650px; margin: 20px auto; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+        input, select { padding: 12px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; flex: 1; min-width: 150px; }
+        button { padding: 12px 20px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        
         .btn-join { background: #9333ea; color: #fff; }
         .btn-join:hover { background: #7e22ce; }
+        .btn-accept { background: #22c55e; color: #fff; }
+        .btn-accept:hover { background: #16a34a; }
+        .btn-reject { background: #f59e0b; color: #fff; }
         .btn-leave { background: #ef4444; color: #fff; }
         .btn-leave:hover { background: #dc2626; }
 
         .video-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
         .video-card { background: #1e293b; border-radius: 12px; overflow: hidden; width: 420px; height: 310px; position: relative; border: 2px solid #334155; }
         .video-card h3 { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); padding: 5px 12px; border-radius: 20px; margin: 0; font-size: 13px; z-index: 10; }
-        .player { width: 100%; height: 100%; background: #000; }
-        .status { margin-top: 15px; font-weight: 500; color: #38bdf8; }
+        .player { width: 100%; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; }
+        .status { margin-top: 15px; font-weight: 500; color: #38bdf8; font-size: 16px; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; background: #3b82f6; margin-left: 10px; }
     </style>
 </head>
 <body>
 
-    <h1>🔮 Astro App Video Call Test</h1>
-    <p>Test 1-on-1 Video Calling with Live Backend API & Agora Web SDK</p>
+    <h1>🔮 Astro App Audio & Video Call Test</h1>
+    <p>Test 1-on-1 Request $\rightarrow$ Accept $\rightarrow$ Agora RTC Stream with Real-Time Sockets</p>
 
     <div class="controls">
-        <input type="text" id="channel" value="room_astro_101" placeholder="Channel Name">
-        <button class="btn-join" onclick="joinCall()">🎥 Join Video Call</button>
-        <button class="btn-leave" onclick="leaveCall()">🛑 Leave Call</button>
+        <input type="text" id="userId" value="65a000000000000000000001" placeholder="User ID">
+        <input type="text" id="astroId" value="65a000000000000000000002" placeholder="Astrologer ID">
+        <select id="callType">
+            <option value="VIDEO">📹 Video Call</option>
+            <option value="AUDIO">📞 Audio Call</option>
+        </select>
+        <button class="btn-join" onclick="requestCall()">📞 Request Call</button>
+        <button class="btn-accept" id="btnAccept" onclick="acceptCall()" style="display:none;">✅ Accept Call</button>
+        <button class="btn-reject" id="btnReject" onclick="rejectCall()" style="display:none;">❌ Reject</button>
+        <button class="btn-leave" onclick="leaveCall()">🛑 End Call</button>
     </div>
 
-    <div class="status" id="statusText">Status: Ready to connect...</div>
+    <div class="status" id="statusText">Status: Socket Disconnected</div>
 
     <div class="video-container">
         <div class="video-card">
-            <h3>📹 My Video (Local Stream)</h3>
-            <div id="local-player" class="player"></div>
+            <h3>📹 My Stream (Local)</h3>
+            <div id="local-player" class="player"><span id="localLabel" style="color:#64748b;">Local Stream Offline</span></div>
         </div>
         <div class="video-card">
-            <h3>👤 Astrologer / User (Remote Stream)</h3>
-            <div id="remote-player" class="player"></div>
+            <h3>👤 Remote Stream (Peer)</h3>
+            <div id="remote-player" class="player"><span id="remoteLabel" style="color:#64748b;">Waiting for Remote Peer...</span></div>
         </div>
     </div>
 
     <script>
-        const BACKEND_URL = "https://kalpjoytish-backend.onrender.com";
+        const BACKEND_URL = window.location.origin;
+        let socket;
+        let activeSessionId = null;
+        let currentCallType = "VIDEO";
+
         let rtc = {
             client: null,
             localAudioTrack: null,
             localVideoTrack: null
         };
 
-        async function joinCall() {
-            const channelName = document.getElementById("channel").value.trim();
-            const statusText = document.getElementById("statusText");
+        // Initialize Socket connection
+        function initSocket() {
+            socket = io(BACKEND_URL);
 
-            if (!channelName) {
-                alert("Please enter a channel name!");
-                return;
-            }
+            socket.on("connect", () => {
+                document.getElementById("statusText").innerText = "🟢 Socket Connected: " + socket.id;
+                const userId = document.getElementById("userId").value;
+                socket.emit("register_user", { userId });
+            });
 
+            socket.on("incoming_call_request", (data) => {
+                activeSessionId = data.sessionId;
+                currentCallType = data.callType;
+                document.getElementById("statusText").innerText = `🔔 Incoming ${data.callType} Call Request! Session: ${data.sessionId}`;
+                document.getElementById("btnAccept").style.display = "inline-block";
+                document.getElementById("btnReject").style.display = "inline-block";
+            });
+
+            socket.on("call_accepted", async (data) => {
+                document.getElementById("statusText").innerText = "🎉 Call Accepted! Connecting to Agora...";
+                document.getElementById("btnAccept").style.display = "none";
+                document.getElementById("btnReject").style.display = "none";
+                await joinAgoraChannel(data.channelName, data.agora.token, data.agora.appId, data.session?.callType || currentCallType);
+            });
+
+            socket.on("call_rejected", (data) => {
+                document.getElementById("statusText").innerText = "❌ Call Rejected: " + (data.reason || "Astrologer unavailable");
+                leaveCall();
+            });
+
+            socket.on("call_ended", (data) => {
+                document.getElementById("statusText").innerText = "🔴 Call Ended: " + (data.message || "Session closed");
+                leaveCall();
+            });
+
+            socket.on("timer_tick", (data) => {
+                console.log("⏱️ Timer Tick:", data);
+            });
+
+            socket.on("wallet_warning", (data) => {
+                alert("⚠️ Warning: " + data.message);
+            });
+        }
+
+        async function requestCall() {
+            const userId = document.getElementById("userId").value;
+            const astrologerId = document.getElementById("astroId").value;
+            const callType = document.getElementById("callType").value;
+            currentCallType = callType;
+
+            document.getElementById("statusText").innerText = "⏳ Initiating Call Request...";
+            
+            socket.emit("request_call", { userId, astrologerId, callType });
+        }
+
+        async function acceptCall() {
+            if (!activeSessionId) return alert("No active call request!");
+            socket.emit("accept_call_request", { sessionId: activeSessionId });
+        }
+
+        async function rejectCall() {
+            if (!activeSessionId) return;
+            socket.emit("reject_call_request", { sessionId: activeSessionId, reason: "Busy" });
+            document.getElementById("btnAccept").style.display = "none";
+            document.getElementById("btnReject").style.display = "none";
+        }
+
+        async function joinAgoraChannel(channelName, token, appId, callType) {
             try {
-                statusText.innerText = "⏳ Requesting Agora RTC Token from Live Backend...";
-                
-                // 1. Fetch Agora Token from Backend API
-                const res = await fetch(`${BACKEND_URL}/api/video-session/generate-token`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ channelName, uid: 0 })
-                });
-
-                const data = await res.json();
-                if (!data.success) {
-                    alert("Token Generation Failed: " + data.message);
-                    return;
-                }
-
-                const { token, appId } = data.data;
-                statusText.innerText = "Connecting to Agora Channel: " + channelName + "...";
-
-                // 2. Initialize Agora Client
                 rtc.client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
-                // Handle Remote User Joining
                 rtc.client.on("user-published", async (user, mediaType) => {
                     await rtc.client.subscribe(user, mediaType);
                     if (mediaType === "video") {
                         user.videoTrack.play("remote-player");
-                        statusText.innerText = "🎉 Remote Video Connected!";
+                        document.getElementById("remoteLabel")?.remove();
                     }
                     if (mediaType === "audio") {
                         user.audioTrack.play();
                     }
                 });
 
-                rtc.client.on("user-unpublished", (user) => {
-                    document.getElementById("remote-player").innerHTML = "";
-                    statusText.innerText = "Remote User Left the Call.";
+                rtc.client.on("user-unpublished", () => {
+                    document.getElementById("remote-player").innerHTML = '<span style="color:#64748b;">Remote Left</span>';
                 });
 
-                // 3. Join Channel
-                const uid = await rtc.client.join(appId === "MOCK_AGORA_APP_ID" ? "12345678" : appId, channelName, token, null);
+                await rtc.client.join(appId === "MOCK_AGORA_APP_ID" ? "12345678" : appId, channelName, token, null);
 
-                // 4. Create and Play Local Microphone & Camera Tracks
+                // Audio track for both audio & video calls
                 rtc.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-                rtc.localVideoTrack = await AgoraRTC.createCameraVideoTrack();
 
-                rtc.localVideoTrack.play("local-player");
-                await rtc.client.publish([rtc.localAudioTrack, rtc.localVideoTrack]);
+                if (callType === "VIDEO") {
+                    rtc.localVideoTrack = await AgoraRTC.createCameraVideoTrack();
+                    rtc.localVideoTrack.play("local-player");
+                    document.getElementById("localLabel")?.remove();
+                    await rtc.client.publish([rtc.localAudioTrack, rtc.localVideoTrack]);
+                } else {
+                    document.getElementById("local-player").innerHTML = '<span style="color:#22c55e; font-size:24px;">🎙️ Audio Call Active</span>';
+                    await rtc.client.publish([rtc.localAudioTrack]);
+                }
 
-                statusText.innerText = "🟢 Video Call Active! Open this page in a second browser window with the same channel name to test 1-on-1 call.";
+                document.getElementById("statusText").innerText = `🟢 ${callType} Call Live in channel ${channelName}!`;
 
             } catch (err) {
-                console.error("Video Call Error:", err);
-                statusText.innerText = "❌ Call Error: " + err.message;
+                console.error("Agora Connection Error:", err);
+                document.getElementById("statusText").innerText = "❌ Connection Error: " + err.message;
             }
         }
 
         async function leaveCall() {
             if (rtc.localAudioTrack) {
                 rtc.localAudioTrack.close();
+                rtc.localAudioTrack = null;
             }
             if (rtc.localVideoTrack) {
                 rtc.localVideoTrack.close();
+                rtc.localVideoTrack = null;
             }
             if (rtc.client) {
                 await rtc.client.leave();
+                rtc.client = null;
             }
-            document.getElementById("local-player").innerHTML = "";
-            document.getElementById("remote-player").innerHTML = "";
-            document.getElementById("statusText").innerText = "🔴 Call Ended.";
+            if (activeSessionId && socket) {
+                socket.emit("end_call_session", { sessionId: activeSessionId });
+            }
+
+            document.getElementById("local-player").innerHTML = '<span style="color:#64748b;">Local Stream Offline</span>';
+            document.getElementById("remote-player").innerHTML = '<span style="color:#64748b;">Waiting for Remote Peer...</span>';
+            document.getElementById("btnAccept").style.display = "none";
+            document.getElementById("btnReject").style.display = "none";
+            document.getElementById("statusText").innerText = "🔴 Call Ended";
         }
+
+        // Connect socket on page load
+        window.onload = initSocket;
     </script>
 </body>
 </html>

@@ -1,27 +1,27 @@
 const express = require("express");
-
 const router = express.Router();
-
 const videoSessionController = require("../controllers/videoSession.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
 
 // Agora Token Generation
 router.post("/generate-token", videoSessionController.generateAgoraToken);
 
-// Create Session & Tokens
-router.post("/create", videoSessionController.createVideoSession);
+// Real-Time Audio & Video Call Lifecycle
+router.post("/request", videoSessionController.requestCall);
+router.post("/accept", videoSessionController.acceptCall);
+router.post("/accept/:id", videoSessionController.acceptCall);
+router.post("/reject", videoSessionController.rejectCall);
+router.post("/reject/:id", videoSessionController.rejectCall);
+router.post("/end", videoSessionController.endCall);
+router.post("/end/:id", videoSessionController.endCall);
+router.get("/history", videoSessionController.getCallHistory);
 
-// Session Lifecycle (Start & End)
+// Legacy Scheduled Video Session Endpoints
+router.post("/create", videoSessionController.createVideoSession);
 router.post("/start", videoSessionController.startVideoSession);
 router.post("/start/:id", videoSessionController.startVideoSession);
-router.post("/end", videoSessionController.endVideoSession);
-router.post("/end/:id", videoSessionController.endVideoSession);
-
-// Listing & Details
 router.get("/all", videoSessionController.getAllVideoSessions);
 router.get("/:id", videoSessionController.getVideoSessionById);
-
-// Update & Delete
 router.put("/update/:id", authMiddleware, videoSessionController.updateVideoSession);
 router.delete("/delete/:id", authMiddleware, videoSessionController.deleteVideoSession);
 

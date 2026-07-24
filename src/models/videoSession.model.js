@@ -5,8 +5,8 @@ const VideoSessionSchema = new mongoose.Schema(
     appointment: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Appointment",
-        required: true,
-        unique: true
+        required: false,
+        default: null
     },
 
     user: {
@@ -21,6 +21,12 @@ const VideoSessionSchema = new mongoose.Schema(
         required: true
     },
 
+    callType: {
+        type: String,
+        enum: ["AUDIO", "VIDEO"],
+        default: "VIDEO"
+    },
+
     provider: {
         type: String,
         enum: ["Agora", "ZegoCloud", "100ms", "Google Meet"],
@@ -30,8 +36,13 @@ const VideoSessionSchema = new mongoose.Schema(
     roomId: {
         type: String,
         required: true,
-        unique: true,
         trim: true
+    },
+
+    channelName: {
+        type: String,
+        trim: true,
+        default: null
     },
 
     joinUrl: {
@@ -49,30 +60,65 @@ const VideoSessionSchema = new mongoose.Schema(
         default: null
     },
 
+    perMinuteRate: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+
+    totalAmountDeducted: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+
+    astrologerEarnings: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+
+    totalDurationMinutes: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+
     startTime: {
         type: Date,
-        required: true
+        default: null
     },
 
     endTime: {
         type: Date,
-        required: true
+        default: null
     },
 
     duration: {
         type: Number,
-        default: 30
+        default: 0
+    },
+
+    rejectionReason: {
+        type: String,
+        default: null
     },
 
     status: {
         type: String,
         enum: [
+            "PENDING",
+            "ACTIVE",
+            "COMPLETED",
+            "REJECTED",
+            "MISSED",
+            "CANCELLED",
             "scheduled",
             "live",
             "completed",
             "cancelled"
         ],
-        default: "scheduled"
+        default: "PENDING"
     }
 
 },
