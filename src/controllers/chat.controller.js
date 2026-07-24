@@ -78,19 +78,23 @@ exports.initiateChat = async (req, res, next) => {
             id: session._id
         };
 
-        // Broadcast to astrologer socket
+        // Broadcast to astrologer socket personal room (user_<astrologerId>) & session room
         try {
             const { getIO } = require("../config/socket");
             const io = getIO();
             if (io) {
-                io.to(`session_${session._id}`).emit("incoming_chat_request", {
+                const payload = {
                     message: "New incoming chat request!",
                     session: responseData,
                     sessionId: session._id,
                     _id: session._id
-                });
+                };
+                io.to(`user_${astrologerId}`).emit("incoming_chat_request", payload);
+                io.to(`session_${session._id}`).emit("incoming_chat_request", payload);
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("Socket emit error on initiateChat:", e);
+        }
 
         return res.status(201).json({
             success: true,
@@ -141,6 +145,19 @@ exports.acceptChat = async (req, res, next) => {
             const { getIO } = require("../config/socket");
             const io = getIO();
             startBillingTimer(sessionId, io);
+
+            if (io) {
+                const responsePayload = {
+                    success: true,
+                    message: "Astrologer accepted chat request. Live session started!",
+                    session,
+                    sessionId: session._id,
+                    _id: session._id,
+                    id: session._id
+                };
+                io.to(`session_${sessionId}`).emit("chat_accepted", responsePayload);
+                io.to(`user_${session.user}`).emit("chat_accepted", responsePayload);
+            }
         } catch (e) {
             startBillingTimer(sessionId, null);
         }
@@ -189,6 +206,23 @@ exports.rejectChat = async (req, res, next) => {
         session.status = "REJECTED";
         session.rejectionReason = req.body.reason || "Astrologer rejected the request.";
         await session.save();
+
+        try {
+            const { getIO } = require("../config/socket");
+            const io = getIO();
+            if (io) {
+                const payload = {
+                    success: false,
+                    message: "Astrologer rejected chat request.",
+                    reason: session.rejectionReason,
+                    session,
+                    sessionId: session._id,
+                    _id: session._id
+                };
+                io.to(`session_${sessionId}`).emit("chat_rejected", payload);
+                io.to(`user_${session.user}`).emit("chat_rejected", payload);
+            }
+        } catch (e) {}
 
         const responseData = {
             ...session.toObject(),
@@ -240,6 +274,21 @@ exports.endChat = async (req, res, next) => {
             session.totalDurationMinutes = Math.max(1, Math.ceil(durationMs / 60000));
             await session.save();
         }
+
+        try {
+            const { getIO } = require("../config/socket");
+            const io = getIO();
+            if (io) {
+                const payload = {
+                    success: true,
+                    message: "Chat session ended successfully.",
+                    session,
+                    sessionId: session._id,
+                    _id: session._id
+                };
+                io.to(`session_${sessionId}`).emit("chat_ended", payload);
+            }
+        } catch (e) {}
 
         const responseData = {
             ...session.toObject(),
