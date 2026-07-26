@@ -199,8 +199,9 @@ const initSocket = (server) => {
                 const text = data ? data.text : "";
                 const mediaUrl = data ? data.mediaUrl : null;
 
-                if (!sessionId || !senderId || (!text && !mediaUrl)) {
-                    socket.emit("error", { message: "Invalid message payload: missing sessionId, senderId, or content." });
+                // Only require sessionId and content (senderId can be resolved from session)
+                if (!sessionId || (!text && !mediaUrl)) {
+                    socket.emit("error", { message: "Invalid message payload: missing sessionId or content." });
                     return;
                 }
 
