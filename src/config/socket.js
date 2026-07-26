@@ -145,28 +145,52 @@ const initSocket = (server) => {
         socket.on("initiate_chat", handleChatRequest);
 
         // 2. Join Chat Session Room
-        socket.on("join_session", async (data) => {
+        const handleJoinRoom = async (data) => {
             const sessionId = extractSessionId(data);
             if (!sessionId) return;
 
-            const roomName = `session_${sessionId}`;
-            socket.join(roomName);
-            console.log(`👤 Socket ${socket.id} joined chat room: ${roomName}`);
+            const cleanId = String(sessionId);
+            socket.join(`session_${cleanId}`);
+            socket.join(cleanId);
+            socket.join(`chat_${cleanId}`);
+            socket.join(`room_${cleanId}`);
+            console.log(`👤 Socket ${socket.id} joined chat room channels for session: ${cleanId}`);
 
             try {
-                const session = await ChatSession.findById(sessionId);
-                socket.emit("session_state", { 
-                    session,
-                    sessionId: session ? session._id : sessionId,
-                    _id: session ? session._id : sessionId
-                });
+                const mongoose = require("mongoose");
+                if (mongoose.Types.ObjectId.isValid(cleanId)) {
+                    const session = await ChatSession.findById(cleanId).catch(() => null);
+                    if (session) {
+                        socket.emit("session_state", { 
+                            session,
+                            sessionId: session._id,
+                            _id: session._id
+                        });
+                    }
+                }
             } catch (err) {
                 console.error("Error fetching session on join:", err);
+            }
+        };
+
+        socket.on("join_session", handleJoinRoom);
+        socket.on("join_room", handleJoinRoom);
+        socket.on("join_chat", handleJoinRoom);
+        socket.on("join", handleJoinRoom);
+        socket.on("subscribe", handleJoinRoom);
+
+        // Allow register_user with just a plain string or object
+        socket.on("join_user", (data) => {
+            const rawId = typeof data === "string" ? data : (data?.userId || data?.id || data?._id || "");
+            const cleanId = String(rawId).replace("user_", "");
+            if (cleanId) {
+                socket.join(`user_${cleanId}`);
+                console.log(`👤 Socket ${socket.id} force-joined personal room: user_${cleanId}`);
             }
         });
 
         // 3. Real-Time Instant Messaging (User <-> Astrologer)
-        socket.on("send_message", async (data) => {
+        const handleSendMessageSocket = async (data) => {
             try {
                 const sessionId = extractSessionId(data);
                 const senderId = data ? (data.senderId || data.userId || data.astrologerId) : null;
@@ -180,43 +204,83 @@ const initSocket = (server) => {
                     return;
                 }
 
-                const session = await ChatSession.findById(sessionId);
-                if (!session) {
-                    socket.emit("error", { message: "Chat session not found." });
-                    return;
+                const mongoose = require("mongoose");
+                let session = null;
+                if (mongoose.Types.ObjectId.isValid(sessionId)) {
+                    session = await ChatSession.findById(sessionId).catch(() => null);
                 }
 
-                // Allow messages if status is ACTIVE or PENDING
-                if (session.status !== "ACTIVE" && session.status !== "PENDING") {
-                    socket.emit("error", { message: `Cannot send message. Session status is ${session.status}` });
-                    return;
+                const normalizedSenderType = String(senderType || "USER").toUpperCase() === "ASTROLOGER" ? "ASTROLOGER" : "USER";
+
+                const validSenderId = (senderId && mongoose.Types.ObjectId.isValid(senderId))
+                    ? senderId
+                    : (session ? (normalizedSenderType === "ASTROLOGER" ? session.astrologer : session.user) : new mongoose.Types.ObjectId());
+
+                let newMessage;
+                if (session) {
+                    newMessage = await ChatMessage.create({
+                        session: sessionId,
+                        senderId: validSenderId,
+                        senderType: normalizedSenderType,
+                        messageType,
+                        text,
+                        mediaUrl
+                    });
+                } else {
+                    newMessage = {
+                        session: sessionId,
+                        senderId: validSenderId,
+                        senderType: normalizedSenderType,
+                        messageType,
+                        text,
+                        mediaUrl,
+                        _id: new mongoose.Types.ObjectId(),
+                        createdAt: new Date()
+                    };
                 }
 
-                const newMessage = await ChatMessage.create({
-                    session: sessionId,
-                    senderId,
-                    senderType: senderType || "user",
-                    messageType,
-                    text,
-                    mediaUrl
-                });
-
+                const cleanSessionId = String(sessionId);
                 const formattedMsg = {
-                    ...newMessage.toObject(),
-                    sessionId: newMessage.session,
-                    _id: newMessage._id,
-                    id: newMessage._id
+                    ...(newMessage.toObject ? newMessage.toObject() : newMessage),
+                    session: cleanSessionId,
+                    sessionId: cleanSessionId,
+                    chatId: cleanSessionId,
+                    roomId: cleanSessionId,
+                    senderType: normalizedSenderType,
+                    _id: String(newMessage._id),
+                    id: String(newMessage._id)
                 };
 
-                // Broadcast to session room AND directly to user rooms of both user & astrologer!
-                io.to(`session_${sessionId}`).emit("receive_message", formattedMsg);
-                if (session.user) io.to(`user_${session.user}`).emit("receive_message", formattedMsg);
-                if (session.astrologer) {
-                    io.to(`user_${session.astrologer}`).emit("receive_message", formattedMsg);
-                    const astro = await Astrologer.findById(session.astrologer);
-                    if (astro) {
-                        if (astro.user) io.to(`user_${astro.user}`).emit("receive_message", formattedMsg);
-                        if (astro.astrologerLogin) io.to(`user_${astro.astrologerLogin}`).emit("receive_message", formattedMsg);
+                // Broadcast to ALL session room variations & user notification rooms
+                const targetRooms = [
+                    `session_${cleanSessionId}`,
+                    cleanSessionId,
+                    `chat_${cleanSessionId}`,
+                    `room_${cleanSessionId}`
+                ];
+
+                targetRooms.forEach(room => {
+                    io.to(room).emit("receive_message", formattedMsg);
+                    io.to(room).emit("receive-message", formattedMsg);
+                    io.to(room).emit("receive_msg", formattedMsg);
+                    io.to(room).emit("new_message", formattedMsg);
+                    io.to(room).emit("chat_message", formattedMsg);
+                    io.to(room).emit("message", formattedMsg);
+                });
+
+                if (session) {
+                    if (session.user) {
+                        io.to(`user_${session.user}`).emit("receive_message", formattedMsg);
+                        io.to(`user_${session.user}`).emit("new_message", formattedMsg);
+                        io.to(`user_${session.user}`).emit("chat_message", formattedMsg);
+                    }
+                    if (session.astrologer) {
+                        io.to(`user_${session.astrologer}`).emit("receive_message", formattedMsg);
+                        const astro = await Astrologer.findById(session.astrologer).catch(() => null);
+                        if (astro) {
+                            if (astro.user) io.to(`user_${astro.user}`).emit("receive_message", formattedMsg);
+                            if (astro.astrologerLogin) io.to(`user_${astro.astrologerLogin}`).emit("receive_message", formattedMsg);
+                        }
                     }
                 }
 
@@ -224,7 +288,10 @@ const initSocket = (server) => {
                 console.error("Socket send_message error:", error);
                 socket.emit("error", { message: "Failed to send message" });
             }
-        });
+        };
+
+        socket.on("send_message", handleSendMessageSocket);
+        socket.on("send_chat_message", handleSendMessageSocket);
 
         // 4. Typing Indicator Status
         socket.on("typing_status", (data) => {

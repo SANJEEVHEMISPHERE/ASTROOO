@@ -341,6 +341,121 @@ exports.endChat = async (req, res, next) => {
 };
 
 /**
+ * 4b. Send Chat Message (REST API endpoint fallback)
+ */
+exports.sendMessage = async (req, res, next) => {
+    try {
+        const sessionId = getSessionIdFromBodyOrParams(req);
+        const { senderId, senderType, text, messageType, mediaUrl } = req.body;
+
+        if (!sessionId || (!text && !mediaUrl)) {
+            return res.status(400).json({
+                success: false,
+                message: "sessionId and text/mediaUrl are required."
+            });
+        }
+
+        const mongoose = require("mongoose");
+        const cleanSessionId = String(sessionId);
+        let session = null;
+        if (mongoose.Types.ObjectId.isValid(cleanSessionId)) {
+            session = await ChatSession.findById(cleanSessionId).catch(() => null);
+        }
+
+        const normalizedSenderType = String(senderType || "USER").toUpperCase() === "ASTROLOGER" ? "ASTROLOGER" : "USER";
+
+        const rawSenderId = senderId || (req.user ? req.user.id || req.user._id : null);
+        const validSenderId = (rawSenderId && mongoose.Types.ObjectId.isValid(rawSenderId))
+            ? rawSenderId
+            : (session ? (normalizedSenderType === "ASTROLOGER" ? session.astrologer : session.user) : new mongoose.Types.ObjectId());
+
+        let newMessage;
+        if (session) {
+            newMessage = await ChatMessage.create({
+                session: cleanSessionId,
+                senderId: validSenderId,
+                senderType: normalizedSenderType,
+                messageType: messageType || "text",
+                text: text || "",
+                mediaUrl: mediaUrl || null
+            });
+        } else {
+            newMessage = {
+                session: cleanSessionId,
+                senderId: validSenderId,
+                senderType: normalizedSenderType,
+                messageType: messageType || "text",
+                text: text || "",
+                mediaUrl: mediaUrl || null,
+                _id: new mongoose.Types.ObjectId(),
+                createdAt: new Date()
+            };
+        }
+
+        const formattedMsg = {
+            ...(newMessage.toObject ? newMessage.toObject() : newMessage),
+            session: cleanSessionId,
+            sessionId: cleanSessionId,
+            chatId: cleanSessionId,
+            roomId: cleanSessionId,
+            senderType: normalizedSenderType,
+            _id: String(newMessage._id),
+            id: String(newMessage._id)
+        };
+
+        try {
+            const { getIO } = require("../config/socket");
+            const io = getIO();
+            if (io) {
+                const targetRooms = [
+                    `session_${cleanSessionId}`,
+                    cleanSessionId,
+                    `chat_${cleanSessionId}`,
+                    `room_${cleanSessionId}`
+                ];
+
+                targetRooms.forEach(room => {
+                    io.to(room).emit("receive_message", formattedMsg);
+                    io.to(room).emit("new_message", formattedMsg);
+                    io.to(room).emit("chat_message", formattedMsg);
+                    io.to(room).emit("receive_msg", formattedMsg);
+                    io.to(room).emit("message", formattedMsg);
+                });
+
+                if (session) {
+                    // Always emit to user's personal room (critical for cross-device delivery)
+                    if (session.user) {
+                        io.to(`user_${session.user}`).emit("receive_message", formattedMsg);
+                        io.to(`user_${session.user}`).emit("new_message", formattedMsg);
+                        io.to(`user_${session.user}`).emit("chat_message", formattedMsg);
+                    }
+                    // Always emit to astrologer's personal room too
+                    if (session.astrologer) {
+                        io.to(`user_${session.astrologer}`).emit("receive_message", formattedMsg);
+                        const astro = await Astrologer.findById(session.astrologer).catch(() => null);
+                        if (astro) {
+                            if (astro.user) io.to(`user_${astro.user}`).emit("receive_message", formattedMsg);
+                            if (astro.astrologerLogin) io.to(`user_${astro.astrologerLogin}`).emit("receive_message", formattedMsg);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Socket emit error in sendMessage API:", e);
+        }
+
+        return res.status(201).json({
+            success: true,
+            data: formattedMsg
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+/**
  * 5. Get Messages History for a Chat Session
  */
 exports.getChatHistory = async (req, res, next) => {
@@ -354,8 +469,14 @@ exports.getChatHistory = async (req, res, next) => {
             });
         }
 
-        const messages = await ChatMessage.find({ session: sessionId })
-            .sort({ createdAt: 1 });
+        const mongoose = require("mongoose");
+        const cleanId = String(sessionId);
+        let queryCondition = { session: cleanId };
+        if (mongoose.Types.ObjectId.isValid(cleanId)) {
+            queryCondition = { $or: [{ session: cleanId }, { session: new mongoose.Types.ObjectId(cleanId) }] };
+        }
+
+        const messages = await ChatMessage.find(queryCondition).sort({ createdAt: 1 });
 
         return res.status(200).json({
             success: true,

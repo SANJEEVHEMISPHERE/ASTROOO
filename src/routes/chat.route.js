@@ -8,6 +8,8 @@ router.post("/initiate", chatController.initiateChat);
 router.post("/accept", chatController.acceptChat);
 router.post("/reject", chatController.rejectChat);
 router.post("/end", chatController.endChat);
+router.post("/send", chatController.sendMessage);
+router.post("/message", chatController.sendMessage);
 
 // Chat History & Listing APIs
 router.get("/history/:sessionId", chatController.getChatHistory);
