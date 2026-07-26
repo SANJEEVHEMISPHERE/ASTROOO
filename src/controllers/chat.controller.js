@@ -96,15 +96,26 @@ exports.initiateChat = async (req, res, next) => {
             });
         }
 
+        const incomingName = req.body.name || req.body.userName || req.body.fullName || (req.body.user && (req.body.user.name || req.body.user.userName));
+        const dbName = user.name || `${user.firstname || ""} ${user.lastname || ""}`.trim() || user.username;
+        const resolvedName = (incomingName && typeof incomingName === "string" && incomingName.trim())
+            ? incomingName.trim()
+            : (dbName || (user.phone ? `User (${user.phone})` : "Client User"));
+
+        if (incomingName && (!user.name || user.name === "Client User")) {
+            user.name = incomingName;
+            await user.save().catch(() => null);
+        }
+
         const userDetails = {
             _id: user._id,
             id: user._id,
-            name: user.name || `${user.firstname || ""} ${user.lastname || ""}`.trim() || user.username || "Client User",
-            firstname: user.firstname,
-            lastname: user.lastname,
-            phone: user.phone,
-            email: user.email,
-            profileImage: user.profileImage || user.avatar,
+            name: resolvedName,
+            firstname: user.firstname || resolvedName.split(" ")[0],
+            lastname: user.lastname || resolvedName.split(" ").slice(1).join(" "),
+            phone: user.phone || "",
+            email: user.email || "",
+            profileImage: user.profileImage || user.avatar || "",
             dob: user.dob || "Not Specified",
             tob: user.tob || "Not Specified",
             pob: user.pob || "Not Specified",

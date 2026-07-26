@@ -107,15 +107,26 @@ const initSocket = (server) => {
                     });
                 }
 
+                const incomingName = data ? (data.name || data.userName || data.fullName || (data.user && (data.user.name || data.user.userName))) : null;
+                const dbName = userObj.name || `${userObj.firstname || ""} ${userObj.lastname || ""}`.trim() || userObj.username;
+                const resolvedName = (incomingName && typeof incomingName === "string" && incomingName.trim())
+                    ? incomingName.trim()
+                    : (dbName || (userObj.phone ? `User (${userObj.phone})` : "Client User"));
+
+                if (incomingName && (!userObj.name || userObj.name === "Client User")) {
+                    userObj.name = incomingName;
+                    await userObj.save().catch(() => null);
+                }
+
                 const userDetails = {
                     _id: userObj._id,
                     id: userObj._id,
-                    name: userObj.name || `${userObj.firstname || ""} ${userObj.lastname || ""}`.trim() || userObj.username || "Client User",
-                    firstname: userObj.firstname,
-                    lastname: userObj.lastname,
-                    phone: userObj.phone,
-                    email: userObj.email,
-                    profileImage: userObj.profileImage || userObj.avatar,
+                    name: resolvedName,
+                    firstname: userObj.firstname || resolvedName.split(" ")[0],
+                    lastname: userObj.lastname || resolvedName.split(" ").slice(1).join(" "),
+                    phone: userObj.phone || "",
+                    email: userObj.email || "",
+                    profileImage: userObj.profileImage || userObj.avatar || "",
                     dob: userObj.dob || "Not Specified",
                     tob: userObj.tob || "Not Specified",
                     pob: userObj.pob || "Not Specified",
