@@ -252,38 +252,20 @@ const initSocket = (server) => {
                     id: String(newMessage._id)
                 };
 
-                // Broadcast to ALL session room variations & user notification rooms
-                const targetRooms = [
-                    `session_${cleanSessionId}`,
-                    cleanSessionId,
-                    `chat_${cleanSessionId}`,
-                    `room_${cleanSessionId}`
-                ];
-
-                targetRooms.forEach(room => {
-                    io.to(room).emit("receive_message", formattedMsg);
-                    io.to(room).emit("receive-message", formattedMsg);
-                    io.to(room).emit("receive_msg", formattedMsg);
-                    io.to(room).emit("new_message", formattedMsg);
-                    io.to(room).emit("chat_message", formattedMsg);
-                    io.to(room).emit("message", formattedMsg);
-                });
-
+                // Broadcast ONCE using chained .to() so Socket.io automatically deduplicates sockets
+                let emitter = io.to(`session_${cleanSessionId}`).to(cleanSessionId);
                 if (session) {
-                    if (session.user) {
-                        io.to(`user_${session.user}`).emit("receive_message", formattedMsg);
-                        io.to(`user_${session.user}`).emit("new_message", formattedMsg);
-                        io.to(`user_${session.user}`).emit("chat_message", formattedMsg);
-                    }
+                    if (session.user) emitter = emitter.to(`user_${session.user}`);
                     if (session.astrologer) {
-                        io.to(`user_${session.astrologer}`).emit("receive_message", formattedMsg);
+                        emitter = emitter.to(`user_${session.astrologer}`);
                         const astro = await Astrologer.findById(session.astrologer).catch(() => null);
                         if (astro) {
-                            if (astro.user) io.to(`user_${astro.user}`).emit("receive_message", formattedMsg);
-                            if (astro.astrologerLogin) io.to(`user_${astro.astrologerLogin}`).emit("receive_message", formattedMsg);
+                            if (astro.user) emitter = emitter.to(`user_${astro.user}`);
+                            if (astro.astrologerLogin) emitter = emitter.to(`user_${astro.astrologerLogin}`);
                         }
                     }
                 }
+                emitter.emit("receive_message", formattedMsg);
 
             } catch (error) {
                 console.error("Socket send_message error:", error);
