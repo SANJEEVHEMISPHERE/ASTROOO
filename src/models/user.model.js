@@ -134,7 +134,7 @@ const UserSchema = new mongoose.Schema(
 UserSchema.pre("save", async function (next) {
   if (!this.uniqueId) {
     const randomDigits = Math.floor(100000 + Math.random() * 900000);
-    this.uniqueId = `KP-USER-${randomDigits}`;
+    this.uniqueId = `UB${randomDigits}`;
   }
   next();
 });
