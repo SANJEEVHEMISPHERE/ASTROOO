@@ -58,7 +58,12 @@ const requestCallSession = async ({ userId, astrologerId, callType = "VIDEO" }) 
         status: { $in: ["PENDING", "ACTIVE", "live"] }
     });
 
-    if (!session) {
+    if (session) {
+        if (session.callType !== normalizedCallType) {
+            session.callType = normalizedCallType;
+            await session.save();
+        }
+    } else {
         const roomId = generateRoomId(normalizedCallType === "AUDIO" ? "audio" : "video");
         const channelName = roomId;
 
