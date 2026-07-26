@@ -453,10 +453,31 @@ const initSocket = (server) => {
 
                 socket.join(`call_${session._id}`);
 
+                // Build flattened user details for IncomingCallModal
+                const sessionUserObj = session.user && typeof session.user === "object" ? session.user : {};
+                const resolvedUserName = sessionUserObj.name ||
+                    `${sessionUserObj.firstname || ""} ${sessionUserObj.lastname || ""}`.trim() ||
+                    (sessionUserObj.phone ? `User (${sessionUserObj.phone})` : "Client");
+
+                const flatUser = {
+                    _id: sessionUserObj._id || sessionUserObj.id || userId,
+                    id: sessionUserObj._id || sessionUserObj.id || userId,
+                    name: resolvedUserName,
+                    firstname: sessionUserObj.firstname || "",
+                    lastname: sessionUserObj.lastname || "",
+                    phone: sessionUserObj.phone || "",
+                    avatar: sessionUserObj.profileImage || sessionUserObj.avatar || "",
+                    profileImage: sessionUserObj.profileImage || sessionUserObj.avatar || "",
+                    dob: sessionUserObj.dob || "Not Specified",
+                    tob: sessionUserObj.tob || "Not Specified",
+                    pob: sessionUserObj.pob || "Not Specified",
+                };
+
                 const payload = {
                     sessionId: session._id,
+                    callId: session._id,
                     callType: session.callType,
-                    user: session.user,
+                    user: flatUser,
                     astrologer: session.astrologer,
                     perMinuteRate: session.perMinuteRate,
                     channelName: session.channelName
@@ -494,17 +515,26 @@ const initSocket = (server) => {
 
                 startCallBillingTimer(sessionId, io);
 
+                // Safely extract user ID whether session.user is populated object or plain ID string
+                const rawUser = result.session.user;
+                const userIdForRoom = (rawUser && typeof rawUser === "object")
+                    ? String(rawUser._id || rawUser.id || "")
+                    : String(rawUser || "");
+
                 const responsePayload = {
                     success: true,
                     message: "Call request accepted! Agora RTC token generated.",
                     sessionId: result.session._id,
-                    channelName: result.session.channelName,
+                    callType: result.session.callType,
+                    channelName: result.session.channelName || result.agora.channelName,
                     agora: result.agora,
+                    appId: result.agora.appId,
+                    token: result.agora.token,
                     session: result.session
                 };
 
                 io.to(`call_${sessionId}`).emit("call_accepted", responsePayload);
-                io.to(`user_${result.session.user}`).emit("call_accepted", responsePayload);
+                if (userIdForRoom) io.to(`user_${userIdForRoom}`).emit("call_accepted", responsePayload);
 
             } catch (err) {
                 console.error("accept_call_request socket error:", err);
@@ -521,6 +551,12 @@ const initSocket = (server) => {
                 const reason = data ? (data.reason || "Astrologer busy") : "Astrologer busy";
                 const session = await videoSessionService.rejectCallSession(sessionId, reason);
 
+                // Safely extract user ID whether session.user is populated object or plain ID
+                const rawUser = session.user;
+                const userIdForRoom = (rawUser && typeof rawUser === "object")
+                    ? String(rawUser._id || rawUser.id || "")
+                    : String(rawUser || "");
+
                 const responsePayload = {
                     success: false,
                     message: "Call request was rejected.",
@@ -529,7 +565,7 @@ const initSocket = (server) => {
                 };
 
                 io.to(`call_${sessionId}`).emit("call_rejected", responsePayload);
-                io.to(`user_${session.user}`).emit("call_rejected", responsePayload);
+                if (userIdForRoom) io.to(`user_${userIdForRoom}`).emit("call_rejected", responsePayload);
 
             } catch (err) {
                 console.error("reject_call_request socket error:", err);

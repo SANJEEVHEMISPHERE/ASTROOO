@@ -62,7 +62,7 @@ const requestCallSession = async ({ userId, astrologerId, callType = "VIDEO" }) 
         const roomId = generateRoomId(normalizedCallType === "AUDIO" ? "audio" : "video");
         const channelName = roomId;
 
-        session = await VideoSession.create({
+        const sessionPayload = {
             user: user._id,
             astrologer: astrologer._id,
             callType: normalizedCallType,
@@ -71,7 +71,23 @@ const requestCallSession = async ({ userId, astrologerId, callType = "VIDEO" }) 
             channelName,
             perMinuteRate,
             status: "PENDING"
-        });
+        };
+
+        try {
+            session = await VideoSession.create(sessionPayload);
+        } catch (createErr) {
+            if (createErr.code === 11000 || (createErr.message && createErr.message.includes("E11000"))) {
+                console.warn("Caught E11000 duplicate key error on VideoSession. Dropping legacy appointment_1 index and retrying...");
+                try {
+                    await VideoSession.collection.dropIndex("appointment_1");
+                } catch (dropErr) {
+                    console.warn("Could not drop appointment_1 index:", dropErr.message);
+                }
+                session = await VideoSession.create(sessionPayload);
+            } else {
+                throw createErr;
+            }
+        }
     }
 
     const populatedSession = await VideoSession.findById(session._id)

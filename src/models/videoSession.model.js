@@ -6,7 +6,8 @@ const VideoSessionSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "Appointment",
         required: false,
-        default: null
+        default: null,
+        index: false   // No unique index — multiple sessions can have appointment=null
     },
 
     user: {

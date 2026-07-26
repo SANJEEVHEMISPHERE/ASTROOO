@@ -22,6 +22,19 @@ const connectDB = async () => {
                 console.log("Successfully dropped legacy non-sparse tuloId_1 index");
             }
 
+            // Clean up legacy unique appointment_1 index from videosessions collection
+            try {
+                const videoSessionsCol = mongoose.connection.collection("videosessions");
+                const videoIndexes = await videoSessionsCol.indexes();
+                const apptIdx = videoIndexes.find(idx => idx.name === "appointment_1");
+                if (apptIdx) {
+                    await videoSessionsCol.dropIndex("appointment_1");
+                    console.log("Successfully dropped legacy unique appointment_1 index from videosessions");
+                }
+            } catch (vErr) {
+                console.warn("VideoSessions index drop warning:", vErr.message);
+            }
+
             // Sync User indexes
             const User = require("../models/user.model");
             await User.syncIndexes();
