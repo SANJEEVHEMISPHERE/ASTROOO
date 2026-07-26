@@ -107,8 +107,24 @@ const initSocket = (server) => {
                     });
                 }
 
+                const userDetails = {
+                    _id: userObj._id,
+                    id: userObj._id,
+                    name: userObj.name || `${userObj.firstname || ""} ${userObj.lastname || ""}`.trim() || userObj.username || "Client User",
+                    firstname: userObj.firstname,
+                    lastname: userObj.lastname,
+                    phone: userObj.phone,
+                    email: userObj.email,
+                    profileImage: userObj.profileImage || userObj.avatar,
+                    dob: userObj.dob || "Not Specified",
+                    tob: userObj.tob || "Not Specified",
+                    pob: userObj.pob || "Not Specified",
+                    gender: userObj.gender || "Not Specified"
+                };
+
                 const responseData = {
                     ...session.toObject(),
+                    user: userDetails,
                     sessionId: session._id,
                     chatId: session._id,
                     _id: session._id,
@@ -121,7 +137,8 @@ const initSocket = (server) => {
                     message: "New incoming chat request!",
                     session: responseData,
                     sessionId: session._id,
-                    _id: session._id
+                    _id: session._id,
+                    user: userDetails
                 };
 
                 io.to(`user_${astroObj._id}`).emit("incoming_chat_request", payload);

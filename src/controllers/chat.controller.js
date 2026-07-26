@@ -96,8 +96,24 @@ exports.initiateChat = async (req, res, next) => {
             });
         }
 
+        const userDetails = {
+            _id: user._id,
+            id: user._id,
+            name: user.name || `${user.firstname || ""} ${user.lastname || ""}`.trim() || user.username || "Client User",
+            firstname: user.firstname,
+            lastname: user.lastname,
+            phone: user.phone,
+            email: user.email,
+            profileImage: user.profileImage || user.avatar,
+            dob: user.dob || "Not Specified",
+            tob: user.tob || "Not Specified",
+            pob: user.pob || "Not Specified",
+            gender: user.gender || "Not Specified"
+        };
+
         const responseData = {
             ...session.toObject(),
+            user: userDetails,
             sessionId: session._id,
             chatId: session._id,
             _id: session._id,
@@ -113,7 +129,8 @@ exports.initiateChat = async (req, res, next) => {
                     message: "New incoming chat request!",
                     session: responseData,
                     sessionId: session._id,
-                    _id: session._id
+                    _id: session._id,
+                    user: userDetails
                 };
                 
                 // Broadcast to Astrologer document ID, User ID, and AstrologerLogin ID rooms
