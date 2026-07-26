@@ -26,7 +26,8 @@ const getProfile = async (req, res, next) => {
 // 2. CREATE / REGISTER USER (With all step-by-step profile fields)
 const registerUser = async (req, res, next) => {
     try {
-        const {
+        let {
+            name,
             firstname,
             middlename,
             lastname,
@@ -61,9 +62,18 @@ const registerUser = async (req, res, next) => {
             });
         }
 
+        if (name && typeof name === "string") {
+            const parts = name.trim().split(/\s+/);
+            firstname = parts[0] || "";
+            lastname = parts.slice(1).join(" ") || "";
+        } else if (firstname) {
+            name = `${firstname} ${lastname || ""}`.trim();
+        }
+
         const generatedTuloId = tuloId || `tulo_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
         const user = await User.create({
+            name: name || null,
             firstname: firstname || null,
             middlename: middlename || null,
             lastname: lastname || null,
@@ -79,7 +89,7 @@ const registerUser = async (req, res, next) => {
             email: email ? email.toLowerCase() : null,
             tuloId: generatedTuloId,
             role: role || "user",
-            isProfileCompleted: Boolean(firstname && lastname)
+            isProfileCompleted: Boolean(name || (firstname && lastname))
         });
 
         const token = generateToken({
@@ -145,6 +155,14 @@ const updateProfile = async (req, res, next) => {
     try {
         const userId = req.params.id || (req.user && req.user.userId);
         const updates = { ...req.body };
+
+        if (updates.name && typeof updates.name === "string") {
+            const parts = updates.name.trim().split(/\s+/);
+            updates.firstname = parts[0] || "";
+            updates.lastname = parts.slice(1).join(" ") || "";
+        } else if (updates.firstname) {
+            updates.name = `${updates.firstname} ${updates.lastname || ""}`.trim();
+        }
 
         if (updates.gender) {
             updates.gender = updates.gender.toLowerCase();

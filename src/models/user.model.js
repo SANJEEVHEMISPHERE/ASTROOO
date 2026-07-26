@@ -2,6 +2,19 @@ const mongoose = require("mongoose");
 
 const UserSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    uniqueId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
+
     firstname: {
       type: String,
       default: null,
@@ -117,5 +130,13 @@ const UserSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+UserSchema.pre("save", async function (next) {
+  if (!this.uniqueId) {
+    const randomDigits = Math.floor(100000 + Math.random() * 900000);
+    this.uniqueId = `KP-USER-${randomDigits}`;
+  }
+  next();
+});
 
 module.exports = mongoose.model("User", UserSchema);
