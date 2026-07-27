@@ -33,7 +33,7 @@ const generateAgoraToken = async (req, res) => {
 // 2. REQUEST CALL (USER -> ASTROLOGER)
 const requestCall = async (req, res) => {
     try {
-        const { userId, astrologerId, callType } = req.body;
+        const { userId, astrologerId, callType, walletBalance } = req.body;
 
         if (!userId || !astrologerId) {
             return res.status(400).json({
@@ -45,7 +45,8 @@ const requestCall = async (req, res) => {
         const session = await videoSessionService.requestCallSession({
             userId,
             astrologerId,
-            callType: callType || "VIDEO"
+            callType: callType || "VIDEO",
+            walletBalance
         });
 
         // Notify Astrologer via Socket.io if available

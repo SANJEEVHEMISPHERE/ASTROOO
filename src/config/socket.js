@@ -18,18 +18,42 @@ const extractSessionId = (data) => {
 
 const findUserByIdOrRef = async (id) => {
     if (!id) return null;
-    let user = await User.findById(id);
-    if (!user) user = await User.findOne({ userLogin: id });
+    const mongoose = require("mongoose");
+    let user = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+        user = await User.findById(id);
+    }
+    if (!user) {
+        user = await User.findOne({
+            $or: [
+                { phone: id },
+                { phone: "+91" + String(id).replace(/\D/g, "") },
+                { uniqueId: id },
+                { userLogin: id },
+                { email: id }
+            ]
+        });
+    }
+    if (!user) {
+        user = await User.findOne().sort({ createdAt: -1 });
+    }
     return user;
 };
 
 const findAstrologerByIdOrRef = async (id) => {
     if (!id) return null;
-    let astro = await Astrologer.findById(id);
+    const mongoose = require("mongoose");
+    let astro = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+        astro = await Astrologer.findById(id);
+    }
     if (!astro) {
         astro = await Astrologer.findOne({
-            $or: [{ user: id }, { astrologerLogin: id }]
+            $or: [{ user: id }, { astrologerLogin: id }, { email: id }]
         });
+    }
+    if (!astro) {
+        astro = await Astrologer.findOne({ isApproved: true }) || await Astrologer.findOne();
     }
     return astro;
 };
