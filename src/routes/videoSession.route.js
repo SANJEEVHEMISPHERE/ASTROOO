@@ -8,6 +8,9 @@ router.post("/generate-token", videoSessionController.generateAgoraToken);
 
 // Real-Time Audio & Video Call Lifecycle
 router.post("/request", videoSessionController.requestCall);
+router.get("/pending", videoSessionController.getPendingCallRequests);
+router.get("/requests", videoSessionController.getPendingCallRequests);
+router.get("/astrologer/:id", videoSessionController.getPendingCallRequests);
 router.post("/accept", videoSessionController.acceptCall);
 router.post("/accept/:id", videoSessionController.acceptCall);
 router.post("/reject", videoSessionController.rejectCall);

@@ -162,15 +162,31 @@ const acceptCall = async (req, res) => {
             const io = getIO();
             startCallBillingTimer(sessionId, io);
 
-            // Notify call room
-            io.to(`call_${sessionId}`).emit("call_accepted", {
+            // Notify call room & user across all room channels
+            const responsePayload = {
                 success: true,
                 message: "Astrologer accepted call request",
                 sessionId: result.session._id,
-                channelName: result.session.channelName,
+                callId: result.session._id,
+                channelName: result.session.channelName || (result.agora && result.agora.channelName),
                 agora: result.agora,
+                appId: (result.agora && result.agora.appId) || "",
+                token: (result.agora && result.agora.token) || "",
                 session: result.session
-            });
+            };
+
+            const rawUser = result.session.user;
+            const userIdForRoom = (rawUser && typeof rawUser === "object")
+                ? String(rawUser._id || rawUser.id || "")
+                : String(rawUser || "");
+
+            io.to(`call_${sessionId}`).emit("call_accepted", responsePayload);
+            if (userIdForRoom) {
+                io.to(`user_${userIdForRoom}`).emit("call_accepted", responsePayload);
+                io.to(userIdForRoom).emit("call_accepted", responsePayload);
+            }
+            io.emit("call_accepted", responsePayload);
+            console.log(`✅ Successfully broadcasted call_accepted for session ${sessionId}`);
         } catch (socketErr) {
             console.log("Socket broadcast skipped:", socketErr.message);
         }
@@ -357,6 +373,73 @@ const deleteVideoSession = async (req, res) => {
     }
 };
 
+const getPendingCallRequests = async (req, res) => {
+    try {
+        const astrologerId = req.query.astrologerId || req.query.astroId || req.query.userId || req.params.id;
+        if (!astrologerId) {
+            return res.status(200).json({ success: true, count: 0, data: [] });
+        }
+
+        const Astrologer = require("../models/astro.model");
+        const mongoose = require("mongoose");
+        let astroObj = null;
+        if (mongoose.Types.ObjectId.isValid(astrologerId)) {
+            astroObj = await Astrologer.findById(astrologerId);
+        }
+        if (!astroObj) {
+            astroObj = await Astrologer.findOne({ $or: [{ user: astrologerId }, { astrologerLogin: astrologerId }] });
+        }
+
+        const astroIds = [astrologerId];
+        if (astroObj) {
+            if (astroObj._id) astroIds.push(astroObj._id.toString());
+            if (astroObj.user) astroIds.push(astroObj.user.toString());
+        }
+
+        const VideoSession = require("../models/videoSession.model");
+        const pendingSessions = await VideoSession.find({
+            astrologer: { $in: astroIds },
+            status: "PENDING"
+        }).sort({ createdAt: -1 }).populate("user", "firstname lastname phone profileImage dob tob pob name").lean();
+
+        const formatted = pendingSessions.map(s => {
+            const userObj = s.user || {};
+            const resolvedName = userObj.name || `${userObj.firstname || ""} ${userObj.lastname || ""}`.trim() || userObj.phone || "Client User";
+            return {
+                sessionId: s._id,
+                callId: s._id,
+                _id: s._id,
+                id: s._id,
+                callType: s.callType,
+                user: {
+                    _id: userObj._id,
+                    id: userObj._id,
+                    name: resolvedName,
+                    phone: userObj.phone || "",
+                    avatar: userObj.profileImage || "",
+                    profileImage: userObj.profileImage || "",
+                    dob: userObj.dob || "Not Specified",
+                    tob: userObj.tob || "Not Specified",
+                    pob: userObj.pob || "Not Specified",
+                },
+                astrologer: s.astrologer,
+                perMinuteRate: s.perMinuteRate,
+                channelName: s.channelName,
+                createdAt: s.createdAt
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            count: formatted.length,
+            data: formatted
+        });
+    } catch (error) {
+        console.error("getPendingCallRequests error:", error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     generateAgoraToken,
     requestCall,
@@ -364,6 +447,7 @@ module.exports = {
     rejectCall,
     endCall,
     getCallHistory,
+    getPendingCallRequests,
     createVideoSession,
     startVideoSession,
     endVideoSession,

@@ -69,14 +69,28 @@ const initSocket = (server) => {
     io.on("connection", (socket) => {
         console.log(`🔌 New Socket Connection Established: ${socket.id}`);
 
-        // Register User or Astrologer to their personal notification room (user_<id>)
-        socket.on("register_user", (data) => {
-            const userId = data ? (data.userId || data.id || data._id) : null;
-            if (userId) {
-                const userRoom = `user_${userId}`;
-                socket.join(userRoom);
-                console.log(`👤 Socket ${socket.id} registered in personal room: ${userRoom}`);
+        // Register User or Astrologer to all their personal notification room variations
+        const handleJoinRegistration = (data) => {
+            if (!data) return;
+            let id = null;
+            if (typeof data === "string" || typeof data === "number") {
+                id = String(data);
+            } else if (typeof data === "object") {
+                id = data.userId || data.astrologerId || data.id || data._id;
             }
+            if (id) {
+                const strId = String(id);
+                socket.join(strId);
+                socket.join(`user_${strId}`);
+                socket.join(`astro_${strId}`);
+                socket.join(`astrologer_${strId}`);
+                socket.join(`room_${strId}`);
+                console.log(`👤 Socket ${socket.id} registered in room variations for ID: ${strId}`);
+            }
+        };
+
+        ["register_user", "register_astrologer", "register", "join", "join_astrologer", "subscribe", "join_user"].forEach(evt => {
+            socket.on(evt, handleJoinRegistration);
         });
 
         // =====================================
