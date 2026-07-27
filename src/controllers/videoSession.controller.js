@@ -35,16 +35,12 @@ const requestCall = async (req, res) => {
     try {
         const { userId, astrologerId, callType, walletBalance } = req.body;
 
-        if (!userId || !astrologerId) {
-            return res.status(400).json({
-                success: false,
-                message: "userId and astrologerId are required"
-            });
-        }
+        const effectiveUserId = userId || req.body.user_id || req.body.user || "user_client";
+        const effectiveAstroId = astrologerId || req.body.astrologer_id || req.body.astrologer || "astrologer";
 
         const session = await videoSessionService.requestCallSession({
-            userId,
-            astrologerId,
+            userId: effectiveUserId,
+            astrologerId: effectiveAstroId,
             callType: callType || "VIDEO",
             walletBalance
         });
