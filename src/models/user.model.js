@@ -131,12 +131,11 @@ const UserSchema = new mongoose.Schema(
   }
 );
 
-UserSchema.pre("save", async function (next) {
+UserSchema.pre("save", async function () {
   if (!this.uniqueId) {
     const randomDigits = Math.floor(100000 + Math.random() * 900000);
     this.uniqueId = `UB${randomDigits}`;
   }
-  next();
 });
 
 module.exports = mongoose.model("User", UserSchema);

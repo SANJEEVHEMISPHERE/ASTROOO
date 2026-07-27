@@ -16,15 +16,16 @@ const findUserByIdOrRef = async (id) => {
         user = await User.findById(id);
     }
     if (!user && id) {
-        user = await User.findOne({
-            $or: [
-                { phone: id },
-                { phone: "+91" + String(id).replace(/\D/g, "") },
-                { uniqueId: id },
-                { userLogin: id },
-                { email: id }
-            ]
-        });
+        const orConditions = [
+            { phone: id },
+            { phone: "+91" + String(id).replace(/\D/g, "") },
+            { uniqueId: id },
+            { email: id }
+        ];
+        if (mongoose.Types.ObjectId.isValid(id)) {
+            orConditions.push({ userLogin: id });
+        }
+        user = await User.findOne({ $or: orConditions });
     }
     if (!user) {
         user = await User.findOne().sort({ createdAt: -1 });
@@ -46,9 +47,14 @@ const findAstrologerByIdOrRef = async (id) => {
         astro = await Astrologer.findById(id);
     }
     if (!astro && id) {
-        astro = await Astrologer.findOne({
-            $or: [{ user: id }, { astrologerLogin: id }, { email: id }, { name: id }]
-        });
+        const orConditions = [
+            { email: id },
+            { name: id }
+        ];
+        if (mongoose.Types.ObjectId.isValid(id)) {
+            orConditions.push({ user: id }, { astrologerLogin: id });
+        }
+        astro = await Astrologer.findOne({ $or: orConditions });
     }
     if (!astro) {
         astro = await Astrologer.findOne({ isApproved: true }) || await Astrologer.findOne();

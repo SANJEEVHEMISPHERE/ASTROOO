@@ -132,6 +132,7 @@ const requestCall = async (req, res) => {
         });
 
     } catch (error) {
+        console.error("requestCall error:", error);
         return res.status(400).json({
             success: false,
             message: error.message
