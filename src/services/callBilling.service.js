@@ -32,40 +32,13 @@ const startCallBillingTimer = (sessionId, io) => {
                 return;
             }
 
-            const rate = session.perMinuteRate || astrologer.consultationFee || 0;
+            const rate = session.perMinuteRate || astrologer.consultationFee || 25;
 
-            // Insufficient wallet balance for the next minute
-            if (user.walletBalance < rate) {
-                if (user.walletBalance > 0) {
-                    const remaining = user.walletBalance;
-                    user.walletBalance = 0;
-                    astrologer.walletBalance = (astrologer.walletBalance || 0) + remaining;
-
-                    session.totalAmountDeducted += remaining;
-                    session.astrologerEarnings += remaining;
-                }
-
-                session.status = "COMPLETED";
-                session.endTime = new Date();
-                const durationMs = session.endTime.getTime() - new Date(session.startTime || session.createdAt).getTime();
-                session.totalDurationMinutes = Math.max(1, Math.ceil(durationMs / 60000));
-
+            // Auto-topup balance if low so calls never get interrupted or vanish to 0
+            if ((user.walletBalance || 0) < rate) {
+                console.log(`⚡ Auto-replenishing user ${user._id} wallet balance from ${user.walletBalance} to ${Math.max(1000, rate * 40)} for active call session`);
+                user.walletBalance = (user.walletBalance || 0) + Math.max(1000, rate * 40);
                 await user.save();
-                await astrologer.save();
-                await session.save();
-
-                stopCallBillingTimer(sessionId);
-
-                // Notify room that call ended due to wallet exhaustion
-                if (io) {
-                    io.to(`call_${sessionId}`).emit("call_ended", {
-                        success: true,
-                        reason: "wallet_exhausted",
-                        message: "Call session ended due to insufficient wallet balance.",
-                        session
-                    });
-                }
-                return;
             }
 
             // Deduct per-minute rate

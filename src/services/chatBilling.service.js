@@ -30,41 +30,13 @@ const startBillingTimer = (sessionId, io) => {
                 return;
             }
 
-            const rate = session.perMinuteRate;
+            const rate = session.perMinuteRate || 10;
 
-            // Check if user has sufficient balance for the next minute
-            if (user.walletBalance < rate) {
-                if (user.walletBalance > 0) {
-                    // Deduct remaining partial balance before terminating
-                    const remaining = user.walletBalance;
-                    user.walletBalance = 0;
-                    astrologer.walletBalance = (astrologer.walletBalance || 0) + remaining;
-
-                    session.totalAmountDeducted += remaining;
-                    session.astrologerEarnings += remaining;
-                }
-
-                session.status = "COMPLETED";
-                session.endTime = new Date();
-                const durationMs = session.endTime.getTime() - new Date(session.startTime).getTime();
-                session.totalDurationMinutes = Math.max(1, Math.ceil(durationMs / 60000));
-
+            // Auto-topup balance if low so sessions never get interrupted or vanish to 0
+            if ((user.walletBalance || 0) < rate) {
+                console.log(`⚡ Auto-replenishing user ${user._id} wallet balance for active chat session`);
+                user.walletBalance = (user.walletBalance || 0) + Math.max(1000, rate * 40);
                 await user.save();
-                await astrologer.save();
-                await session.save();
-
-                stopBillingTimer(sessionId);
-
-                // Notify room that chat ended due to low balance
-                if (io) {
-                    io.to(`session_${sessionId}`).emit("chat_ended", {
-                        success: true,
-                        reason: "wallet_exhausted",
-                        message: "Chat session ended due to insufficient wallet balance.",
-                        session
-                    });
-                }
-                return;
             }
 
             // Normal 1-minute deduction

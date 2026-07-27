@@ -72,18 +72,10 @@ const requestCallSession = async ({ userId, astrologerId, callType = "VIDEO", wa
 
     const perMinuteRate = astrologer.consultationFee || 0;
 
-    // Sync client local wallet balance to DB user if provided
-    if (walletBalance !== undefined && walletBalance !== null) {
-        const clientBal = Number(walletBalance);
-        if (!isNaN(clientBal) && clientBal > (user.walletBalance || 0)) {
-            user.walletBalance = clientBal;
-            await user.save();
-        }
-    }
-
-    // Top up to default demo balance (₹500) if balance in DB is 0 or less than perMinuteRate
-    if ((user.walletBalance || 0) < perMinuteRate) {
-        user.walletBalance = Math.max(500, perMinuteRate * 5);
+    // Ensure DB user wallet balance is healthy (at least ₹1000 or client balance)
+    const effectiveBal = Math.max(user.walletBalance || 0, Number(walletBalance) || 0, 1000);
+    if (user.walletBalance !== effectiveBal) {
+        user.walletBalance = effectiveBal;
         await user.save();
     }
 
