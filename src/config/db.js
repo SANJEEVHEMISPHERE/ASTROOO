@@ -39,9 +39,36 @@ const connectDB = async () => {
             const User = require("../models/user.model");
             await User.syncIndexes();
             console.log("User model indexes synced successfully");
-        } catch (err) {
-            console.warn("Index sync warning:", err.message);
-        }
+
+            // Migration: Populate uniqueId for existing users
+            const usersWithoutId = await User.find({
+              $or: [
+                { uniqueId: { $exists: false } },
+                { uniqueId: null },
+                { uniqueId: "" }
+              ]
+            });
+            if (usersWithoutId.length > 0) {
+              console.log(`Migrating ${usersWithoutId.length} users to generate uniqueIds...`);
+              for (const u of usersWithoutId) {
+                let isUnique = false;
+                let generatedId = "";
+                while (!isUnique) {
+                  const randomDigits = Math.floor(100000 + Math.random() * 900000);
+                  generatedId = `UB${randomDigits}`;
+                  const duplicate = await User.findOne({ uniqueId: generatedId });
+                  if (!duplicate) {
+                    isUnique = true;
+                  }
+                }
+                u.uniqueId = generatedId;
+                await u.save();
+              }
+              console.log("Migration complete!");
+            }
+          } catch (err) {
+            console.warn("Index sync / Migration warning:", err.message);
+          }
 
     } catch (error) {
         console.log(error);

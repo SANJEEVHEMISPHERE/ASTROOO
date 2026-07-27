@@ -13,6 +13,7 @@ const uploadRoutes = require("./upload.route");
 const adminRoutes = require("./admin.route");
 const astroInterviewRoutes = require("./astroInterview.route");
 const chatRoutes = require("./chat.route");
+const walletRoutes = require("./wallet.route");
 
 router.use("/auth", authRoutes);
 router.use("/user", userRoutes);
@@ -25,5 +26,6 @@ router.use("/upload", uploadRoutes);
 router.use("/admin", adminRoutes);
 router.use("/interview", astroInterviewRoutes);
 router.use("/chat", chatRoutes);
+router.use("/wallet", walletRoutes);
 
 module.exports = router;
