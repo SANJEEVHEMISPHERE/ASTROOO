@@ -508,12 +508,35 @@ const initSocket = (server) => {
                 };
 
                 const astroObj = await findAstrologerByIdOrRef(astrologerId);
+                const targetRooms = new Set();
+                targetRooms.add(`user_${astrologerId}`);
+                targetRooms.add(`astro_${astrologerId}`);
+                targetRooms.add(`astrologer_${astrologerId}`);
+                targetRooms.add(String(astrologerId));
+
                 if (astroObj) {
-                    io.to(`user_${astroObj._id}`).emit("incoming_call_request", payload);
-                    if (astroObj.user) io.to(`user_${astroObj.user}`).emit("incoming_call_request", payload);
-                    if (astroObj.astrologerLogin) io.to(`user_${astroObj.astrologerLogin}`).emit("incoming_call_request", payload);
+                    if (astroObj._id) {
+                        targetRooms.add(`user_${astroObj._id}`);
+                        targetRooms.add(`astro_${astroObj._id}`);
+                        targetRooms.add(String(astroObj._id));
+                    }
+                    if (astroObj.user) {
+                        targetRooms.add(`user_${astroObj.user}`);
+                        targetRooms.add(`astro_${astroObj.user}`);
+                        targetRooms.add(String(astroObj.user));
+                    }
+                    if (astroObj.astrologerLogin) {
+                        targetRooms.add(`user_${astroObj.astrologerLogin}`);
+                        targetRooms.add(String(astroObj.astrologerLogin));
+                    }
                 }
+
+                targetRooms.forEach(room => {
+                    io.to(room).emit("incoming_call_request", payload);
+                });
+
                 io.to(`call_${session._id}`).emit("incoming_call_request", payload);
+                io.emit("incoming_call_request", payload);
 
                 socket.emit("call_request_sent", {
                     success: true,

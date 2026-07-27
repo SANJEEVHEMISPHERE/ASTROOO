@@ -49,19 +49,84 @@ const requestCall = async (req, res) => {
             walletBalance
         });
 
-        // Notify Astrologer via Socket.io if available
+        // Notify Astrologer via Socket.io across all room variations
         try {
             const io = getIO();
-            io.to(`user_${astrologerId}`).emit("incoming_call_request", {
+            const Astrologer = require("../models/astro.model");
+            let astroObj = null;
+            const mongoose = require("mongoose");
+            if (mongoose.Types.ObjectId.isValid(astrologerId)) {
+                astroObj = await Astrologer.findById(astrologerId);
+            }
+            if (!astroObj) {
+                astroObj = await Astrologer.findOne({ $or: [{ user: astrologerId }, { astrologerLogin: astrologerId }] });
+            }
+
+            const sessionUserObj = session.user && typeof session.user === "object" ? session.user : {};
+            const resolvedUserName = sessionUserObj.name ||
+                `${sessionUserObj.firstname || ""} ${sessionUserObj.lastname || ""}`.trim() ||
+                (sessionUserObj.phone ? `User (${sessionUserObj.phone})` : "Client User");
+
+            const flatUser = {
+                _id: sessionUserObj._id || sessionUserObj.id || userId,
+                id: sessionUserObj._id || sessionUserObj.id || userId,
+                name: resolvedUserName,
+                firstname: sessionUserObj.firstname || "",
+                lastname: sessionUserObj.lastname || "",
+                phone: sessionUserObj.phone || "",
+                avatar: sessionUserObj.profileImage || sessionUserObj.avatar || "",
+                profileImage: sessionUserObj.profileImage || sessionUserObj.avatar || "",
+                dob: sessionUserObj.dob || "Not Specified",
+                tob: sessionUserObj.tob || "Not Specified",
+                pob: sessionUserObj.pob || "Not Specified",
+            };
+
+            const payload = {
                 sessionId: session._id,
+                callId: session._id,
+                _id: session._id,
+                id: session._id,
                 callType: session.callType,
-                user: session.user,
+                user: flatUser,
                 astrologer: session.astrologer,
                 perMinuteRate: session.perMinuteRate,
                 channelName: session.channelName
+            };
+
+            const targetRooms = new Set();
+            targetRooms.add(`user_${astrologerId}`);
+            targetRooms.add(`astro_${astrologerId}`);
+            targetRooms.add(`astrologer_${astrologerId}`);
+            targetRooms.add(String(astrologerId));
+
+            if (astroObj) {
+                if (astroObj._id) {
+                    targetRooms.add(`user_${astroObj._id}`);
+                    targetRooms.add(`astro_${astroObj._id}`);
+                    targetRooms.add(String(astroObj._id));
+                }
+                if (astroObj.user) {
+                    targetRooms.add(`user_${astroObj.user}`);
+                    targetRooms.add(`astro_${astroObj.user}`);
+                    targetRooms.add(String(astroObj.user));
+                }
+                if (astroObj.astrologerLogin) {
+                    targetRooms.add(`user_${astroObj.astrologerLogin}`);
+                    targetRooms.add(String(astroObj.astrologerLogin));
+                }
+            }
+
+            // Emit to each target room
+            targetRooms.forEach(room => {
+                io.to(room).emit("incoming_call_request", payload);
             });
+
+            // Global socket broadcast fallback
+            io.emit("incoming_call_request", payload);
+            console.log(`📞 Successfully broadcasted incoming_call_request to ${targetRooms.size} rooms & global listeners for session ${session._id}`);
+
         } catch (socketErr) {
-            console.log("Socket notification skipped (not connected or server initializing):", socketErr.message);
+            console.log("Socket notification error:", socketErr.message);
         }
 
         return res.status(201).json({
