@@ -550,7 +550,7 @@ const initSocket = (server) => {
                 });
 
                 io.to(`call_${session._id}`).emit("incoming_call_request", payload);
-                io.emit("incoming_call_request", payload);
+                // Removed global broadcast for privacy. Only targeted astrologer receives this.
 
                 socket.emit("call_request_sent", {
                     success: true,

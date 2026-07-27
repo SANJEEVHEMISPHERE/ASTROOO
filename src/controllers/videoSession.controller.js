@@ -117,9 +117,9 @@ const requestCall = async (req, res) => {
                 io.to(room).emit("incoming_call_request", payload);
             });
 
-            // Global socket broadcast fallback
-            io.emit("incoming_call_request", payload);
-            console.log(`📞 Successfully broadcasted incoming_call_request to ${targetRooms.size} rooms & global listeners for session ${session._id}`);
+            // Global socket broadcast fallback removed for privacy.
+            // Only targeted rooms receive the request.
+            console.log(`📞 Successfully broadcasted incoming_call_request to ${targetRooms.size} rooms for session ${session._id}`);
 
         } catch (socketErr) {
             console.log("Socket notification error:", socketErr.message);
